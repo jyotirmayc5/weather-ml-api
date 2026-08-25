@@ -1,0 +1,1022 @@
+{
+  "name": "PROD Weather 3",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 45 9 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -32,
+        480
+      ],
+      "id": "16c7edac-0e6e-4142-aedc-f54e52b7166f",
+      "name": "Schedule Predict Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw =\n  $input.first().json.data ||\n  $input.first().json.body ||\n  $input.first().json;\n\nif (typeof raw === \"string\") raw = JSON.parse(raw);\n\nconst props = raw.properties;\n\nfunction cToF(c) {\n  return Number(((c * 9 / 5) + 32).toFixed(1));\n}\n\nfunction durationToHours(duration) {\n  if (!duration) return 1;\n  const dayMatch = duration.match(/P(\\d+)D/);\n  const hourMatch = duration.match(/T(\\d+)H/);\n  let hours = 0;\n  if (dayMatch) hours += Number(dayMatch[1]) * 24;\n  if (hourMatch) hours += Number(hourMatch[1]);\n  return hours || 1;\n}\n\nfunction addHours(date, hours) {\n  return new Date(date.getTime() + hours * 3600000);\n}\n\nconst now = new Date();\n\nconst nyDate = new Intl.DateTimeFormat(\"en-CA\", {\n  timeZone: \"America/New_York\",\n  year: \"numeric\",\n  month: \"2-digit\",\n  day: \"2-digit\"\n}).format(new Date(now.getTime() + 24 * 60 * 60 * 1000));\n\nconst rows = {};\n\nconst fields = {\n  temperature: \"temperature_c\",\n  dewpoint: \"dewpoint_c\",\n  relativeHumidity: \"humidity_pct\",\n  skyCover: \"sky_cover_pct\",\n  probabilityOfPrecipitation: \"precip_probability_pct\",\n  windSpeed: \"wind_speed\",\n  windDirection: \"wind_direction\"\n};\n\nfor (const [sourceField, outputField] of Object.entries(fields)) {\n  const series = props[sourceField]?.values || [];\n\n  for (const item of series) {\n    const [startRaw, durationRaw = \"PT1H\"] = item.validTime.split(\"/\");\n    const start = new Date(startRaw);\n    const hours = durationToHours(durationRaw);\n\n    for (let h = 0; h < hours; h++) {\n      const ts = addHours(start, h);\n\n      const localDate = new Intl.DateTimeFormat(\"en-CA\", {\n        timeZone: \"America/New_York\",\n        year: \"numeric\",\n        month: \"2-digit\",\n        day: \"2-digit\"\n      }).format(ts);\n\n      if (localDate !== nyDate) continue;\n\n      const key = ts.toISOString();\n\n      if (!rows[key]) rows[key] = { timestamp: key };\n\n      rows[key][outputField] = item.value;\n    }\n  }\n}\n\nconst dayRows = Object.values(rows);\n\nconst tempsF = dayRows\n  .map(r => r.temperature_c)\n  .filter(v => v !== null && v !== undefined)\n  .map(cToF);\n\nconst avg = arr =>\n  arr.length ? Number((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1)) : null;\n\nconst max = arr =>\n  arr.length ? Math.max(...arr) : null;\n\nconst degToRad = deg => deg * Math.PI / 180;\n\nconst vals = field =>\n  dayRows.map(r => r[field]).filter(v => v !== null && v !== undefined);\n\nconst avgSinWind = avg(\n  vals(\"wind_direction\").map(d => Math.sin(degToRad(d)))\n);\n\nconst avgCosWind = avg(\n  vals(\"wind_direction\").map(d => Math.cos(degToRad(d)))\n);\n\nconst hourNY = iso =>\n  Number(new Intl.DateTimeFormat(\"en-US\", {\n    timeZone: \"America/New_York\",\n    hour: \"numeric\",\n    hour12: false\n  }).format(new Date(iso)));\n\nconst peakRows = dayRows.filter(r => {\n  const h = hourNY(r.timestamp);\n  return h >= 12 && h <= 16;\n});\n\nconst peakVals = field =>\n  peakRows.map(r => r[field]).filter(v => v !== null && v !== undefined);\n\nconst targetEndUTC = new Date(\n  new Date(`${nyDate}T23:59:59`).toLocaleString(\n    \"en-US\",\n    { timeZone: \"America/New_York\" }\n  )\n);\n\nconst leadHours = Number(\n  ((targetEndUTC - now) / 3600000).toFixed(1)\n);\n\nconst nowNY = new Date();\n\nconst month = Number(\n  new Intl.DateTimeFormat(\"en-US\", {\n    timeZone: \"America/New_York\",\n    month: \"numeric\"\n  }).format(nowNY)\n);\n\nconst start = new Date(nowNY.getFullYear(), 0, 0);\nconst diff = nowNY - start;\nconst oneDay = 1000 * 60 * 60 * 24;\n\nconst dayOfYear = Math.floor(diff / oneDay);\n\nreturn [{\n  json: {\n    prediction_created_at: now.toISOString(),\n    target_date: nyDate,\n    station: \"KNYC\",\n\n    forecast_high_f: max(tempsF),\n    forecast_low_f: tempsF.length ? Math.min(...tempsF) : null,\n    corrected_high_f: null,\n\n    avg_humidity_pct: avg(vals(\"humidity_pct\")),\n    avg_dewpoint_f: avg(vals(\"dewpoint_c\").map(cToF)),\n    avg_sky_cover_pct: avg(vals(\"sky_cover_pct\")),\n    max_precip_probability_pct: max(vals(\"precip_probability_pct\")),\n\n    peak_heating_cloud_pct: avg(peakVals(\"sky_cover_pct\")),\n    peak_heating_temp_f: max(peakVals(\"temperature_c\").map(cToF)),\n\n    avg_wind_speed: avg(vals(\"wind_speed\")),\n    avg_wind_sin: avgSinWind,\n    avg_wind_cos: avgCosWind,\n    lead_hours: leadHours,\n    month: month,\n    day_of_year: dayOfYear,\n    source: \"NWS OKX/33,37\"\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        480
+      ],
+      "id": "0e40fae6-ff29-4981-aad4-1a4625c8562b",
+      "name": "Forecast HIGH"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 55 23 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -64,
+        832
+      ],
+      "id": "c9b8475d-1feb-4df0-b5e5-27bae9e60195",
+      "name": "Schedule Actual HIgh"
+    },
+    {
+      "parameters": {
+        "method": "=GET",
+        "url": "=https://api.weather.gov/stations/KNYC/observations?start={{$now.setZone('America/New_York').startOf('day').toUTC().toFormat(\"yyyy-MM-dd'T'HH:mm:ss'Z'\")}}&end={{$now.setZone('America/New_York').endOf('day').toUTC().toFormat(\"yyyy-MM-dd'T'HH:mm:ss'Z'\")}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        144,
+        832
+      ],
+      "id": "3a9b99c7-a8db-4f5b-ac44-21c5b4e1158a",
+      "name": "KNYC actuals for EOD"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE weather_daily_high_predictions\n\nSET\n    actual_high_f = {{ $json.actual_high_f }},\n\n    morning_pressure_hpa =\n      {{ $json.morning_pressure_hpa ?? 'NULL' }},\n\n    afternoon_pressure_hpa =\n      {{ $json.afternoon_pressure_hpa ?? 'NULL' }},\n\n    pressure_change_hpa =\n      {{ $json.pressure_change_hpa ?? 'NULL' }},\n\n    avg_pressure_hpa =\n      {{ $json.avg_pressure_hpa ?? 'NULL' }},\n\n    pressure_6am_hpa =\n      {{ $json.pressure_6am_hpa ?? 'NULL' }},\n\n    pressure_12pm_hpa =\n      {{ $json.pressure_12pm_hpa ?? 'NULL' }},\n\n    pressure_6pm_hpa =\n      {{ $json.pressure_6pm_hpa ?? 'NULL' }},\n\n    raw_error_f =\n        {{ $json.actual_high_f }} - forecast_high_f,\n\n    corrected_error_f =\n        {{ $json.actual_high_f }} - corrected_high_f\n\nWHERE target_date = '{{ $json.target_date }}'\n\nAND station = 'KNYC';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        576,
+        832
+      ],
+      "id": "59a402b2-737d-46fa-8faa-5045d1d6e9be",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "postgres": {
+          "id": "n3YMEXarMAGBbER7",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst features = raw.features || [];\n\nconst cToF = (c) =>\n  Number(((c * 9 / 5) + 32).toFixed(1));\n\nconst targetDate = new Intl.DateTimeFormat(\"en-CA\", {\n  timeZone: \"America/New_York\",\n  year: \"numeric\",\n  month: \"2-digit\",\n  day: \"2-digit\"\n}).format(new Date());\n\n// Extract station from first feature\nconst station =\n  features[0]?.properties?.station\n    ?.split(\"/\")\n    .pop() ?? \"UNKNOWN\";\n\nconst temps = features\n  .map(f => f.properties?.temperature?.value)\n  .filter(v => v !== null && v !== undefined)\n  .map(cToF);\n\nif (temps.length === 0) {\n  throw new Error(\n    `No observations found for ${targetDate}`\n  );\n}\n\nconst maxTemp = Math.max(...temps);\n\n// -----------------------------\n// PRESSURE FEATURES\n// -----------------------------\nconst pressureObs = features\n  .map(f => {\n    const p = f.properties;\n    const pressurePa = p?.barometricPressure?.value;\n    const timestamp = p?.timestamp;\n\n    if (pressurePa == null || !timestamp) return null;\n\n    const hourNY = Number(\n      new Intl.DateTimeFormat(\"en-US\", {\n        timeZone: \"America/New_York\",\n        hour: \"2-digit\",\n        hour12: false\n      }).format(new Date(timestamp))\n    );\n\n    return {\n      pressure_hpa: pressurePa / 100,\n      hourNY\n    };\n  })\n  .filter(Boolean);\n\nconst avg = (arr) =>\n  arr.length\n    ? Number((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1))\n    : null;\n\n// Average pressure for entire day\nconst avgPressureHpa =\n  avg(pressureObs.map(o => o.pressure_hpa));\n\n// Closest pressure reading to target hour\nfunction nearestPressure(targetHour) {\n  const candidates = pressureObs\n    .map(o => ({\n      pressure_hpa: o.pressure_hpa,\n      diff: Math.abs(o.hourNY - targetHour)\n    }))\n    .sort((a, b) => a.diff - b.diff);\n\n  return candidates.length\n    ? Number(candidates[0].pressure_hpa.toFixed(1))\n    : null;\n}\n\nconst pressure6amHpa = nearestPressure(6);\nconst pressure12pmHpa = nearestPressure(12);\nconst pressure6pmHpa = nearestPressure(18);\n\n// Morning = 6 AM to 11:59 AM\nconst morningPressures = pressureObs\n  .filter(o => o.hourNY >= 6 && o.hourNY < 12)\n  .map(o => o.pressure_hpa);\n\n// Afternoon = 12 PM to 5:59 PM\nconst afternoonPressures = pressureObs\n  .filter(o => o.hourNY >= 12 && o.hourNY < 18)\n  .map(o => o.pressure_hpa);\n\nconst morningPressureHpa = avg(morningPressures);\nconst afternoonPressureHpa = avg(afternoonPressures);\n\nconst pressureChangeHpa =\n  morningPressureHpa != null && afternoonPressureHpa != null\n    ? Number((afternoonPressureHpa - morningPressureHpa).toFixed(1))\n    : null;\n\nreturn [{\n  json: {\n    target_date: targetDate,\n\n    station: station,\n\n    actual_high_f:\n      Number(maxTemp.toFixed(1)),\n\n    morning_pressure_hpa: morningPressureHpa,\n    afternoon_pressure_hpa: afternoonPressureHpa,\n    pressure_change_hpa: pressureChangeHpa,\n\n    avg_pressure_hpa: avgPressureHpa,\n    pressure_6am_hpa: pressure6amHpa,\n    pressure_12pm_hpa: pressure12pmHpa,\n    pressure_6pm_hpa: pressure6pmHpa,\n\n    observations_used:\n      temps.length\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        832
+      ],
+      "id": "c79e61d2-2de8-4492-8c31-875a9aa60c8f",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "content": "Hourly prediction engine : NWS hourly forecast normalize hourly rows prediction engine API Convert to F Insert weather_predictions Stores hourly forecast_temperature_f and corrected_temperature_f",
+        "height": 272,
+        "width": 1488
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -144,
+        112
+      ],
+      "id": "3aa9399c-c548-4541-b723-7f858f89e512",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "method": "=GET",
+        "url": "=https://api.weather.gov/stations/KNYC/observations/latest",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -48,
+        1024
+      ],
+      "id": "45ac02c1-76b8-4a51-bf37-2733967efcc2",
+      "name": "Collect latest KNYC observations"
+    },
+    {
+      "parameters": {
+        "method": "=GET",
+        "url": "=https://api.weather.gov/stations/KLGA/observations/latest",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -48,
+        1232
+      ],
+      "id": "0d4e65ab-e18b-4499-afc3-37f772e7660e",
+      "name": "Collect latest KLGA observations"
+    },
+    {
+      "parameters": {
+        "method": "=GET",
+        "url": "=https://api.weather.gov/stations/KJFK/observations/latest",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -48,
+        1456
+      ],
+      "id": "8c422202-08f4-456f-9e8d-58a9e137f6ba",
+      "name": "Collect latest KJFK observations"
+    },
+    {
+      "parameters": {
+        "method": "=GET",
+        "url": "=https://api.weather.gov/stations/KEWR/observations/latest",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -48,
+        1680
+      ],
+      "id": "63ab5210-f9e5-4fd8-8ced-0cbb1ddbbb82",
+      "name": "Collect latest KEWR observations"
+    },
+    {
+      "parameters": {
+        "method": "=GET",
+        "url": "=https://api.weather.gov/stations/KTEB/observations/latest",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -48,
+        1904
+      ],
+      "id": "0ef7b06e-7ef0-4754-b367-61e605843e3e",
+      "name": "Collect latest KTEB observations"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -384,
+        1456
+      ],
+      "id": "1489ca8d-e54a-4465-87fa-019aab964666",
+      "name": "Schedule actuals latest"
+    },
+    {
+      "parameters": {
+        "numberInputs": 5
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        432,
+        1408
+      ],
+      "id": "9a4f4f0c-f27c-4e9c-ab3b-dacd0b1978dd",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO weather_observations (\n  observed_time,\n  station,\n  actual_temperature_f,\n  actual_dewpoint_f,\n  actual_humidity_pct,\n  actual_pressure_pa,\n  actual_pressure_hpa,\n  wind_u,\n  wind_v,\n  actual_wind_speed,\n  actual_wind_direction,\n  visibility_m,\n  text_description\n)\nVALUES (\n  '{{ $json.observed_time }}',\n  '{{ $json.station }}',\n  {{ $json.actual_temperature_f ?? 'NULL' }},\n  {{ $json.actual_dewpoint_f ?? 'NULL' }},\n  {{ $json.actual_humidity_pct ?? 'NULL' }},\n  {{ $json.actual_pressure_pa ?? 'NULL' }},\n  {{ $json.actual_pressure_hpa ?? 'NULL' }},\n  {{ $json.wind_u ?? 'NULL' }},\n  {{ $json.wind_v ?? 'NULL' }},\n  {{ $json.actual_wind_speed ?? 'NULL' }},\n  {{ $json.actual_wind_direction ?? 'NULL' }},\n  {{ $json.visibility_m ?? 'NULL' }},\n  '{{ ($json.text_description || \"\").replace(/'/g,\"''\") }}'\n)\nON CONFLICT (station, observed_time)\nDO NOTHING;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        816,
+        1456
+      ],
+      "id": "78410e5d-f5b2-4ba4-8a38-e515f1f372e3",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "n3YMEXarMAGBbER7",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 45 9 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        1504,
+        160
+      ],
+      "id": "096d7e25-6be2-4f7e-8e89-3c84dd776bba",
+      "name": "Schedule Predict Data1"
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw =\n  $input.first().json.data ||\n  $input.first().json.body ||\n  $input.first().json;\n\nif (typeof raw === \"string\") raw = JSON.parse(raw);\n\nconst props = raw.properties;\n\nfunction cToF(c) {\n  return Number(((c * 9 / 5) + 32).toFixed(1));\n}\n\nfunction durationToHours(duration) {\n  if (!duration) return 1;\n  const dayMatch = duration.match(/P(\\d+)D/);\n  const hourMatch = duration.match(/T(\\d+)H/);\n  let hours = 0;\n  if (dayMatch) hours += Number(dayMatch[1]) * 24;\n  if (hourMatch) hours += Number(hourMatch[1]);\n  return hours || 1;\n}\n\nfunction addHours(date, hours) {\n  return new Date(date.getTime() + hours * 3600000);\n}\n\nconst now = new Date();\n\nconst nyDate = new Intl.DateTimeFormat(\"en-CA\", {\n  timeZone: \"America/New_York\",\n  year: \"numeric\",\n  month: \"2-digit\",\n  day: \"2-digit\"\n}).format(new Date(now.getTime() + 24 * 60 * 60 * 1000));\n\nconst rows = {};\n\nconst fields = {\n  temperature: \"temperature_c\",\n  dewpoint: \"dewpoint_c\",\n  relativeHumidity: \"humidity_pct\",\n  skyCover: \"sky_cover_pct\",\n  probabilityOfPrecipitation: \"precip_probability_pct\",\n  windSpeed: \"wind_speed\",\n  windDirection: \"wind_direction\"\n};\n\nfor (const [sourceField, outputField] of Object.entries(fields)) {\n  const series = props[sourceField]?.values || [];\n\n  for (const item of series) {\n    const [startRaw, durationRaw = \"PT1H\"] = item.validTime.split(\"/\");\n    const start = new Date(startRaw);\n    const hours = durationToHours(durationRaw);\n\n    for (let h = 0; h < hours; h++) {\n      const ts = addHours(start, h);\n\n      const localDate = new Intl.DateTimeFormat(\"en-CA\", {\n        timeZone: \"America/New_York\",\n        year: \"numeric\",\n        month: \"2-digit\",\n        day: \"2-digit\"\n      }).format(ts);\n\n      if (localDate !== nyDate) continue;\n\n      const key = ts.toISOString();\n\n      if (!rows[key]) rows[key] = { timestamp: key };\n\n      rows[key][outputField] = item.value;\n    }\n  }\n}\n\nconst dayRows = Object.values(rows);\n\nconst tempsF = dayRows\n  .map(r => r.temperature_c)\n  .filter(v => v !== null && v !== undefined)\n  .map(cToF);\n\nconst avg = arr =>\n  arr.length ? Number((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1)) : null;\n\nconst max = arr =>\n  arr.length ? Math.max(...arr) : null;\n\nconst degToRad = deg => deg * Math.PI / 180;\n\nconst vals = field =>\n  dayRows.map(r => r[field]).filter(v => v !== null && v !== undefined);\n\nconst avgSinWind = avg(\n  vals(\"wind_direction\").map(d => Math.sin(degToRad(d)))\n);\n\nconst avgCosWind = avg(\n  vals(\"wind_direction\").map(d => Math.cos(degToRad(d)))\n);\n\nconst hourNY = iso =>\n  Number(new Intl.DateTimeFormat(\"en-US\", {\n    timeZone: \"America/New_York\",\n    hour: \"numeric\",\n    hour12: false\n  }).format(new Date(iso)));\n\nconst peakRows = dayRows.filter(r => {\n  const h = hourNY(r.timestamp);\n  return h >= 12 && h <= 16;\n});\n\nconst peakVals = field =>\n  peakRows.map(r => r[field]).filter(v => v !== null && v !== undefined);\n\nconst targetEndUTC = new Date(\n  new Date(`${nyDate}T23:59:59`).toLocaleString(\n    \"en-US\",\n    { timeZone: \"America/New_York\" }\n  )\n);\n\nconst leadHours = Number(\n  ((targetEndUTC - now) / 3600000).toFixed(1)\n);\n\nconst nowNY = new Date();\n\nconst month = Number(\n  new Intl.DateTimeFormat(\"en-US\", {\n    timeZone: \"America/New_York\",\n    month: \"numeric\"\n  }).format(nowNY)\n);\n\nconst start = new Date(nowNY.getFullYear(), 0, 0);\nconst diff = nowNY - start;\nconst oneDay = 1000 * 60 * 60 * 24;\n\nconst dayOfYear = Math.floor(diff / oneDay);\n\nreturn [{\n  json: {\n    prediction_created_at: now.toISOString(),\n    target_date: nyDate,\n    station: \"GRID_34_35_COASTAL\",\n\n    forecast_high_f: max(tempsF),\n    forecast_low_f: tempsF.length ? Math.min(...tempsF) : null,\n    corrected_high_f: null,\n\n    avg_humidity_pct: avg(vals(\"humidity_pct\")),\n    avg_dewpoint_f: avg(vals(\"dewpoint_c\").map(cToF)),\n    avg_sky_cover_pct: avg(vals(\"sky_cover_pct\")),\n    max_precip_probability_pct: max(vals(\"precip_probability_pct\")),\n\n    peak_heating_cloud_pct: avg(peakVals(\"sky_cover_pct\")),\n    peak_heating_temp_f: max(peakVals(\"temperature_c\").map(cToF)),\n\n    avg_wind_speed: avg(vals(\"wind_speed\")),\n    avg_wind_sin: avgSinWind,\n    avg_wind_cos: avgCosWind,\n    lead_hours: leadHours,\n    month: month,\n    day_of_year: dayOfYear,\n    source: \"NWS OKX/34,35\"\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1936,
+        160
+      ],
+      "id": "74ee064b-589a-43bc-9037-ab23c3ec9629",
+      "name": "Forecast HIGH1"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "weather_daily_high_predictions",
+          "mode": "list",
+          "cachedResultName": "weather_daily_high_predictions"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "station": "={{ $json.station }}",
+            "forecast_high_f": "={{ $json.forecast_high_f }}",
+            "corrected_high_f": "={{ $json.corrected_high_f }}",
+            "avg_humidity_pct": "={{ $json.avg_humidity_pct }}",
+            "avg_dewpoint_f": "={{ $json.avg_dewpoint_f }}",
+            "avg_sky_cover_pct": "={{ $json.avg_sky_cover_pct }}",
+            "max_precip_probability_pct": "={{ $json.max_precip_probability_pct }}",
+            "avg_wind_speed": "={{ $json.avg_wind_speed }}",
+            "source": "={{ $json.source }}",
+            "prediction_created_at": "={{ $json.prediction_created_at }}",
+            "target_date": "={{ $json.target_date }}",
+            "avg_wind_cos": "={{ $json.avg_wind_cos }}",
+            "avg_wind_sin": "={{ $json.avg_wind_sin }}",
+            "forecast_low_f": "={{ $json.forecast_low_f }}",
+            "peak_heating_cloud_pct": "={{ $json.peak_heating_cloud_pct }}",
+            "peak_heating_temp_f": "={{ $json.peak_heating_temp_f }}",
+            "lead_hours": "={{ $json.lead_hours }}",
+            "month": "={{ $json.month }}",
+            "day_of_year": "={{ $json.day_of_year }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            { "id": "id", "displayName": "id", "required": false, "defaultMatch": true, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
+            { "id": "prediction_created_at", "displayName": "prediction_created_at", "required": false, "defaultMatch": false, "display": true, "type": "dateTime", "canBeUsedToMatch": true },
+            { "id": "target_date", "displayName": "target_date", "required": false, "defaultMatch": false, "display": true, "type": "dateTime", "canBeUsedToMatch": true },
+            { "id": "station", "displayName": "station", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "forecast_high_f", "displayName": "forecast_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "corrected_high_f", "displayName": "corrected_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "actual_high_f", "displayName": "actual_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
+            { "id": "raw_error_f", "displayName": "raw_error_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
+            { "id": "corrected_error_f", "displayName": "corrected_error_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
+            { "id": "avg_humidity_pct", "displayName": "avg_humidity_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "avg_dewpoint_f", "displayName": "avg_dewpoint_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "avg_sky_cover_pct", "displayName": "avg_sky_cover_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "max_precip_probability_pct", "displayName": "max_precip_probability_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "avg_wind_speed", "displayName": "avg_wind_speed", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "source", "displayName": "source", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "avg_wind_sin", "displayName": "avg_wind_sin", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "avg_wind_cos", "displayName": "avg_wind_cos", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "forecast_low_f", "displayName": "forecast_low_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "peak_heating_cloud_pct", "displayName": "peak_heating_cloud_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "peak_heating_temp_f", "displayName": "peak_heating_temp_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "lead_hours", "displayName": "lead_hours", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "month", "displayName": "month", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "day_of_year", "displayName": "day_of_year", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2160,
+        160
+      ],
+      "id": "14a49650-6641-4505-9213-23cd2ab4e363",
+      "name": "NWS insert prediction high1",
+      "credentials": {
+        "postgres": {
+          "id": "n3YMEXarMAGBbER7",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "Daily High Workflow: 9:45 AM predict tomorrow's KNYC high | 11:55 PM update actual KNYC high",
+        "height": 624,
+        "width": 960
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1424,
+        112
+      ],
+      "id": "9c6a34fb-5064-410b-9241-5d03a712ae02",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 45 9 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        1488,
+        352
+      ],
+      "id": "1a7953af-b04b-4a20-8f8c-8a95847df9bd",
+      "name": "Schedule Predict Data2"
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw =\n  $input.first().json.data ||\n  $input.first().json.body ||\n  $input.first().json;\n\nif (typeof raw === \"string\") raw = JSON.parse(raw);\n\nconst props = raw.properties;\n\nfunction cToF(c) {\n  return Number(((c * 9 / 5) + 32).toFixed(1));\n}\n\nfunction durationToHours(duration) {\n  if (!duration) return 1;\n  const dayMatch = duration.match(/P(\\d+)D/);\n  const hourMatch = duration.match(/T(\\d+)H/);\n  let hours = 0;\n  if (dayMatch) hours += Number(dayMatch[1]) * 24;\n  if (hourMatch) hours += Number(hourMatch[1]);\n  return hours || 1;\n}\n\nfunction addHours(date, hours) {\n  return new Date(date.getTime() + hours * 3600000);\n}\n\nconst now = new Date();\n\nconst nyDate = new Intl.DateTimeFormat(\"en-CA\", {\n  timeZone: \"America/New_York\",\n  year: \"numeric\",\n  month: \"2-digit\",\n  day: \"2-digit\"\n}).format(new Date(now.getTime() + 24 * 60 * 60 * 1000));\n\nconst rows = {};\n\nconst fields = {\n  temperature: \"temperature_c\",\n  dewpoint: \"dewpoint_c\",\n  relativeHumidity: \"humidity_pct\",\n  skyCover: \"sky_cover_pct\",\n  probabilityOfPrecipitation: \"precip_probability_pct\",\n  windSpeed: \"wind_speed\",\n  windDirection: \"wind_direction\"\n};\n\nfor (const [sourceField, outputField] of Object.entries(fields)) {\n  const series = props[sourceField]?.values || [];\n\n  for (const item of series) {\n    const [startRaw, durationRaw = \"PT1H\"] = item.validTime.split(\"/\");\n    const start = new Date(startRaw);\n    const hours = durationToHours(durationRaw);\n\n    for (let h = 0; h < hours; h++) {\n      const ts = addHours(start, h);\n\n      const localDate = new Intl.DateTimeFormat(\"en-CA\", {\n        timeZone: \"America/New_York\",\n        year: \"numeric\",\n        month: \"2-digit\",\n        day: \"2-digit\"\n      }).format(ts);\n\n      if (localDate !== nyDate) continue;\n\n      const key = ts.toISOString();\n\n      if (!rows[key]) rows[key] = { timestamp: key };\n\n      rows[key][outputField] = item.value;\n    }\n  }\n}\n\nconst dayRows = Object.values(rows);\n\nconst tempsF = dayRows\n  .map(r => r.temperature_c)\n  .filter(v => v !== null && v !== undefined)\n  .map(cToF);\n\nconst avg = arr =>\n  arr.length ? Number((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1)) : null;\n\nconst max = arr =>\n  arr.length ? Math.max(...arr) : null;\n\nconst degToRad = deg => deg * Math.PI / 180;\n\nconst vals = field =>\n  dayRows.map(r => r[field]).filter(v => v !== null && v !== undefined);\n\nconst avgSinWind = avg(\n  vals(\"wind_direction\").map(d => Math.sin(degToRad(d)))\n);\n\nconst avgCosWind = avg(\n  vals(\"wind_direction\").map(d => Math.cos(degToRad(d)))\n);\n\nconst hourNY = iso =>\n  Number(new Intl.DateTimeFormat(\"en-US\", {\n    timeZone: \"America/New_York\",\n    hour: \"numeric\",\n    hour12: false\n  }).format(new Date(iso)));\n\nconst peakRows = dayRows.filter(r => {\n  const h = hourNY(r.timestamp);\n  return h >= 12 && h <= 16;\n});\n\nconst peakVals = field =>\n  peakRows.map(r => r[field]).filter(v => v !== null && v !== undefined);\n\nconst targetEndUTC = new Date(\n  new Date(`${nyDate}T23:59:59`).toLocaleString(\n    \"en-US\",\n    { timeZone: \"America/New_York\" }\n  )\n);\n\nconst leadHours = Number(\n  ((targetEndUTC - now) / 3600000).toFixed(1)\n);\n\nconst nowNY = new Date();\n\nconst month = Number(\n  new Intl.DateTimeFormat(\"en-US\", {\n    timeZone: \"America/New_York\",\n    month: \"numeric\"\n  }).format(nowNY)\n);\n\nconst start = new Date(nowNY.getFullYear(), 0, 0);\nconst diff = nowNY - start;\nconst oneDay = 1000 * 60 * 60 * 24;\n\nconst dayOfYear = Math.floor(diff / oneDay);\n\nreturn [{\n  json: {\n    prediction_created_at: now.toISOString(),\n    target_date: nyDate,\n    station: \"GRID_36_33_MARINE\",\n\n    forecast_high_f: max(tempsF),\n    forecast_low_f: tempsF.length ? Math.min(...tempsF) : null,\n    corrected_high_f: null,\n\n    avg_humidity_pct: avg(vals(\"humidity_pct\")),\n    avg_dewpoint_f: avg(vals(\"dewpoint_c\").map(cToF)),\n    avg_sky_cover_pct: avg(vals(\"sky_cover_pct\")),\n    max_precip_probability_pct: max(vals(\"precip_probability_pct\")),\n\n    peak_heating_cloud_pct: avg(peakVals(\"sky_cover_pct\")),\n    peak_heating_temp_f: max(peakVals(\"temperature_c\").map(cToF)),\n\n    avg_wind_speed: avg(vals(\"wind_speed\")),\n    avg_wind_sin: avgSinWind,\n    avg_wind_cos: avgCosWind,\n    lead_hours: leadHours,\n    month: month,\n    day_of_year: dayOfYear,\n    source: \"NWS OKX/36,33\"\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1872,
+        352
+      ],
+      "id": "19e203fa-9a28-45e3-986e-ab478ae731e9",
+      "name": "Forecast HIGH2"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "weather_daily_high_predictions",
+          "mode": "list",
+          "cachedResultName": "weather_daily_high_predictions"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "station": "={{ $json.station }}",
+            "forecast_high_f": "={{ $json.forecast_high_f }}",
+            "corrected_high_f": "={{ $json.corrected_high_f }}",
+            "avg_humidity_pct": "={{ $json.avg_humidity_pct }}",
+            "avg_dewpoint_f": "={{ $json.avg_dewpoint_f }}",
+            "avg_sky_cover_pct": "={{ $json.avg_sky_cover_pct }}",
+            "max_precip_probability_pct": "={{ $json.max_precip_probability_pct }}",
+            "avg_wind_speed": "={{ $json.avg_wind_speed }}",
+            "source": "={{ $json.source }}",
+            "prediction_created_at": "={{ $json.prediction_created_at }}",
+            "target_date": "={{ $json.target_date }}",
+            "avg_wind_cos": "={{ $json.avg_wind_cos }}",
+            "avg_wind_sin": "={{ $json.avg_wind_sin }}",
+            "forecast_low_f": "={{ $json.forecast_low_f }}",
+            "peak_heating_cloud_pct": "={{ $json.peak_heating_cloud_pct }}",
+            "peak_heating_temp_f": "={{ $json.peak_heating_temp_f }}",
+            "lead_hours": "={{ $json.lead_hours }}",
+            "month": "={{ $json.month }}",
+            "day_of_year": "={{ $json.day_of_year }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            { "id": "id", "displayName": "id", "required": false, "defaultMatch": true, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
+            { "id": "prediction_created_at", "displayName": "prediction_created_at", "required": false, "defaultMatch": false, "display": true, "type": "dateTime", "canBeUsedToMatch": true },
+            { "id": "target_date", "displayName": "target_date", "required": false, "defaultMatch": false, "display": true, "type": "dateTime", "canBeUsedToMatch": true },
+            { "id": "station", "displayName": "station", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "forecast_high_f", "displayName": "forecast_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "corrected_high_f", "displayName": "corrected_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "actual_high_f", "displayName": "actual_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
+            { "id": "raw_error_f", "displayName": "raw_error_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
+            { "id": "corrected_error_f", "displayName": "corrected_error_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
+            { "id": "avg_humidity_pct", "displayName": "avg_humidity_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "avg_dewpoint_f", "displayName": "avg_dewpoint_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "avg_sky_cover_pct", "displayName": "avg_sky_cover_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "max_precip_probability_pct", "displayName": "max_precip_probability_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "avg_wind_speed", "displayName": "avg_wind_speed", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "source", "displayName": "source", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "avg_wind_sin", "displayName": "avg_wind_sin", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "avg_wind_cos", "displayName": "avg_wind_cos", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "forecast_low_f", "displayName": "forecast_low_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "peak_heating_cloud_pct", "displayName": "peak_heating_cloud_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "peak_heating_temp_f", "displayName": "peak_heating_temp_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "lead_hours", "displayName": "lead_hours", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "month", "displayName": "month", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "day_of_year", "displayName": "day_of_year", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2096,
+        352
+      ],
+      "id": "4ce6b776-9dee-4822-b03f-e1f895b2d6bc",
+      "name": "NWS insert prediction high2",
+      "credentials": {
+        "postgres": {
+          "id": "n3YMEXarMAGBbER7",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 45 9 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        1504,
+        544
+      ],
+      "id": "d98f0074-770a-4334-b8fa-2219f72e4bdb",
+      "name": "Schedule Predict Data3"
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw =\n  $input.first().json.data ||\n  $input.first().json.body ||\n  $input.first().json;\n\nif (typeof raw === \"string\") raw = JSON.parse(raw);\n\nconst props = raw.properties;\n\nfunction cToF(c) {\n  return Number(((c * 9 / 5) + 32).toFixed(1));\n}\n\nfunction durationToHours(duration) {\n  if (!duration) return 1;\n  const dayMatch = duration.match(/P(\\d+)D/);\n  const hourMatch = duration.match(/T(\\d+)H/);\n  let hours = 0;\n  if (dayMatch) hours += Number(dayMatch[1]) * 24;\n  if (hourMatch) hours += Number(hourMatch[1]);\n  return hours || 1;\n}\n\nfunction addHours(date, hours) {\n  return new Date(date.getTime() + hours * 3600000);\n}\n\nconst now = new Date();\n\nconst nyDate = new Intl.DateTimeFormat(\"en-CA\", {\n  timeZone: \"America/New_York\",\n  year: \"numeric\",\n  month: \"2-digit\",\n  day: \"2-digit\"\n}).format(new Date(now.getTime() + 24 * 60 * 60 * 1000));\n\nconst rows = {};\n\nconst fields = {\n  temperature: \"temperature_c\",\n  dewpoint: \"dewpoint_c\",\n  relativeHumidity: \"humidity_pct\",\n  skyCover: \"sky_cover_pct\",\n  probabilityOfPrecipitation: \"precip_probability_pct\",\n  windSpeed: \"wind_speed\",\n  windDirection: \"wind_direction\"\n};\n\nfor (const [sourceField, outputField] of Object.entries(fields)) {\n  const series = props[sourceField]?.values || [];\n\n  for (const item of series) {\n    const [startRaw, durationRaw = \"PT1H\"] = item.validTime.split(\"/\");\n    const start = new Date(startRaw);\n    const hours = durationToHours(durationRaw);\n\n    for (let h = 0; h < hours; h++) {\n      const ts = addHours(start, h);\n\n      const localDate = new Intl.DateTimeFormat(\"en-CA\", {\n        timeZone: \"America/New_York\",\n        year: \"numeric\",\n        month: \"2-digit\",\n        day: \"2-digit\"\n      }).format(ts);\n\n      if (localDate !== nyDate) continue;\n\n      const key = ts.toISOString();\n\n      if (!rows[key]) rows[key] = { timestamp: key };\n\n      rows[key][outputField] = item.value;\n    }\n  }\n}\n\nconst dayRows = Object.values(rows);\n\nconst tempsF = dayRows\n  .map(r => r.temperature_c)\n  .filter(v => v !== null && v !== undefined)\n  .map(cToF);\n\nconst avg = arr =>\n  arr.length ? Number((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1)) : null;\n\nconst max = arr =>\n  arr.length ? Math.max(...arr) : null;\n\nconst degToRad = deg => deg * Math.PI / 180;\n\nconst vals = field =>\n  dayRows.map(r => r[field]).filter(v => v !== null && v !== undefined);\n\nconst avgSinWind = avg(\n  vals(\"wind_direction\").map(d => Math.sin(degToRad(d)))\n);\n\nconst avgCosWind = avg(\n  vals(\"wind_direction\").map(d => Math.cos(degToRad(d)))\n);\n\nconst hourNY = iso =>\n  Number(new Intl.DateTimeFormat(\"en-US\", {\n    timeZone: \"America/New_York\",\n    hour: \"numeric\",\n    hour12: false\n  }).format(new Date(iso)));\n\nconst peakRows = dayRows.filter(r => {\n  const h = hourNY(r.timestamp);\n  return h >= 12 && h <= 16;\n});\n\nconst peakVals = field =>\n  peakRows.map(r => r[field]).filter(v => v !== null && v !== undefined);\n\nconst targetEndUTC = new Date(\n  new Date(`${nyDate}T23:59:59`).toLocaleString(\n    \"en-US\",\n    { timeZone: \"America/New_York\" }\n  )\n);\n\nconst leadHours = Number(\n  ((targetEndUTC - now) / 3600000).toFixed(1)\n);\n\nconst nowNY = new Date();\n\nconst month = Number(\n  new Intl.DateTimeFormat(\"en-US\", {\n    timeZone: \"America/New_York\",\n    month: \"numeric\"\n  }).format(nowNY)\n);\n\nconst start = new Date(nowNY.getFullYear(), 0, 0);\nconst diff = nowNY - start;\nconst oneDay = 1000 * 60 * 60 * 24;\n\nconst dayOfYear = Math.floor(diff / oneDay);\n\nreturn [{\n  json: {\n    prediction_created_at: now.toISOString(),\n    target_date: nyDate,\n    station: \"GRID_31_39_INLAND\",\n\n    forecast_high_f: max(tempsF),\n    forecast_low_f: tempsF.length ? Math.min(...tempsF) : null,\n    corrected_high_f: null,\n\n    avg_humidity_pct: avg(vals(\"humidity_pct\")),\n    avg_dewpoint_f: avg(vals(\"dewpoint_c\").map(cToF)),\n    avg_sky_cover_pct: avg(vals(\"sky_cover_pct\")),\n    max_precip_probability_pct: max(vals(\"precip_probability_pct\")),\n\n    peak_heating_cloud_pct: avg(peakVals(\"sky_cover_pct\")),\n    peak_heating_temp_f: max(peakVals(\"temperature_c\").map(cToF)),\n\n    avg_wind_speed: avg(vals(\"wind_speed\")),\n    avg_wind_sin: avgSinWind,\n    avg_wind_cos: avgCosWind,\n    lead_hours: leadHours,\n    month: month,\n    day_of_year: dayOfYear,\n    source: \"NWS OKX/31,39\"\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1888,
+        544
+      ],
+      "id": "4c3cbdcd-7734-4879-b91c-b35692c2cf9d",
+      "name": "Forecast HIGH3"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "weather_daily_high_predictions",
+          "mode": "list",
+          "cachedResultName": "weather_daily_high_predictions"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "station": "={{ $json.station }}",
+            "forecast_high_f": "={{ $json.forecast_high_f }}",
+            "corrected_high_f": "={{ $json.corrected_high_f }}",
+            "avg_humidity_pct": "={{ $json.avg_humidity_pct }}",
+            "avg_dewpoint_f": "={{ $json.avg_dewpoint_f }}",
+            "avg_sky_cover_pct": "={{ $json.avg_sky_cover_pct }}",
+            "max_precip_probability_pct": "={{ $json.max_precip_probability_pct }}",
+            "avg_wind_speed": "={{ $json.avg_wind_speed }}",
+            "source": "={{ $json.source }}",
+            "prediction_created_at": "={{ $json.prediction_created_at }}",
+            "target_date": "={{ $json.target_date }}",
+            "avg_wind_cos": "={{ $json.avg_wind_cos }}",
+            "avg_wind_sin": "={{ $json.avg_wind_sin }}",
+            "forecast_low_f": "={{ $json.forecast_low_f }}",
+            "peak_heating_cloud_pct": "={{ $json.peak_heating_cloud_pct }}",
+            "peak_heating_temp_f": "={{ $json.peak_heating_temp_f }}",
+            "lead_hours": "={{ $json.lead_hours }}",
+            "month": "={{ $json.month }}",
+            "day_of_year": "={{ $json.day_of_year }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            { "id": "id", "displayName": "id", "required": false, "defaultMatch": true, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
+            { "id": "prediction_created_at", "displayName": "prediction_created_at", "required": false, "defaultMatch": false, "display": true, "type": "dateTime", "canBeUsedToMatch": true },
+            { "id": "target_date", "displayName": "target_date", "required": false, "defaultMatch": false, "display": true, "type": "dateTime", "canBeUsedToMatch": true },
+            { "id": "station", "displayName": "station", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "forecast_high_f", "displayName": "forecast_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "corrected_high_f", "displayName": "corrected_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "actual_high_f", "displayName": "actual_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
+            { "id": "raw_error_f", "displayName": "raw_error_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
+            { "id": "corrected_error_f", "displayName": "corrected_error_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
+            { "id": "avg_humidity_pct", "displayName": "avg_humidity_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "avg_dewpoint_f", "displayName": "avg_dewpoint_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "avg_sky_cover_pct", "displayName": "avg_sky_cover_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "max_precip_probability_pct", "displayName": "max_precip_probability_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "avg_wind_speed", "displayName": "avg_wind_speed", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
+            { "id": "source", "displayName": "source", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "avg_wind_sin", "displayName": "avg_wind_sin", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "avg_wind_cos", "displayName": "avg_wind_cos", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "forecast_low_f", "displayName": "forecast_low_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "peak_heating_cloud_pct", "displayName": "peak_heating_cloud_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "peak_heating_temp_f", "displayName": "peak_heating_temp_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "lead_hours", "displayName": "lead_hours", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "month", "displayName": "month", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
+            { "id": "day_of_year", "displayName": "day_of_year", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2112,
+        544
+      ],
+      "id": "a5fc1045-dcf8-4bc8-b33b-8ec16a949c39",
+      "name": "NWS insert prediction high3",
+      "credentials": {
+        "postgres": {
+          "id": "n3YMEXarMAGBbER7",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.weather.gov/gridpoints/OKX/33,37",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        144,
+        480
+      ],
+      "id": "da617311-af3d-490c-98ec-4ce7c734361d",
+      "name": "NWS OKX/33,37 24H"
+    },
+    {
+      "parameters": {
+        "url": "https://api.weather.gov/gridpoints/OKX/34,35",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1728,
+        160
+      ],
+      "id": "cc706bbd-ea5d-48cb-9b1e-9d16d3dfa717",
+      "name": "NWS OKX/34,35 24H1"
+    },
+    {
+      "parameters": {
+        "url": "https://api.weather.gov/gridpoints/OKX/36,33",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1664,
+        352
+      ],
+      "id": "54f93234-27bb-4c2f-bad0-1cb7887f89da",
+      "name": "NWS OKX/36,33 24H2"
+    },
+    {
+      "parameters": {
+        "url": "https://api.weather.gov/gridpoints/OKX/31,39",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1680,
+        544
+      ],
+      "id": "0ea3f2ac-48c4-4284-9a50-fdbddd85902b",
+      "name": "NWS OKX/31,39 24H3"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => {\n\n  const p = item.json.properties;\n\n  const cToF = (c) =>\n    c === null || c === undefined\n      ? null\n      : Number(((c * 9 / 5) + 32).toFixed(1));\n\n  const pressurePa = p.barometricPressure?.value ?? null;\n  const windSpeed = p.windSpeed?.value ?? null;\n  const windDirection = p.windDirection?.value ?? null;\n\n  return {\n    json: {\n      observed_time: p.timestamp,\n\n      station:\n        p.station?.split(\"/\").pop() ?? null,\n\n      actual_temperature_f:\n        cToF(p.temperature?.value),\n\n      actual_dewpoint_f:\n        cToF(p.dewpoint?.value),\n\n      actual_humidity_pct:\n        p.relativeHumidity?.value ?? null,\n\n      actual_pressure_pa:\n        pressurePa,\n\n      actual_pressure_hpa:\n        pressurePa == null\n          ? null\n          : Number((pressurePa / 100).toFixed(1)),\n\n      actual_wind_speed:\n        windSpeed,\n\n      actual_wind_direction:\n        windDirection,\n\n      wind_u:\n        windSpeed == null || windDirection == null\n          ? null\n          : Number((windSpeed * Math.sin(windDirection * Math.PI / 180)).toFixed(2)),\n\n      wind_v:\n        windSpeed == null || windDirection == null\n          ? null\n          : Number((windSpeed * Math.cos(windDirection * Math.PI / 180)).toFixed(2)),\n\n      visibility_m:\n        p.visibility?.value ?? null,\n\n      text_description:\n        p.textDescription ?? null\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        1456
+      ],
+      "id": "5a928020-77ab-4570-ae7a-7c385e43e0e5",
+      "name": "Return Observations"
+    },
+    {
+      "parameters": {
+        "maxItems": 24
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        480,
+        192
+      ],
+      "id": "8f9e56af-ce82-4b7b-a0ff-5eb9424b9513",
+      "name": "Limit"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n\n  const input = item.json.input_received || {};\n\n  const forecastC =\n    item.json.forecast_temperature_c ??\n    input.temperature_c ??\n    item.json.temperature_c ??\n    0;\n\n  const correctedC =\n    item.json.corrected_temperature_c ??\n    forecastC;\n\n  const forecastTime =\n    item.json.timestamp ??\n    input.timestamp ??\n    null;\n\n  const cToF = (c) =>\n    c === null || c === undefined\n      ? null\n      : Number(((c * 9 / 5) + 32).toFixed(1));\n\n  return {\n    json: {\n      forecast_time: forecastTime,\n      forecast_created_at: new Date().toISOString(),\n\n      forecast_temperature_c: forecastC,\n      corrected_temperature_c: correctedC,\n\n      forecast_temperature_f: cToF(forecastC),\n      corrected_temperature_f: cToF(correctedC),\n\n      predicted_error_c: item.json.predicted_error_c ?? null,\n      predicted_error_f: cToF(item.json.predicted_error_c) ?? null,\n\n      dewpoint_c:\n        item.json.dewpoint_c ??\n        input.dewpoint_c ??\n        null,\n\n      dewpoint_f:\n        cToF(item.json.dewpoint_c ?? input.dewpoint_c ?? null),\n\n      humidity_pct:\n        item.json.humidity_pct ??\n        input.humidity_pct ??\n        null,\n\n      wind_speed:\n        item.json.wind_speed ??\n        input.wind_speed ??\n        null,\n\n      wind_direction:\n        item.json.wind_direction ??\n        input.wind_direction ??\n        null,\n\n      sky_cover_pct:\n        item.json.sky_cover_pct ??\n        input.sky_cover_pct ??\n        null,\n\n      precip_probability_pct:\n        item.json.precip_probability_pct ??\n        input.precip_probability_pct ??\n        null,\n\n      source:\n        item.json.source ??\n        input.source ??\n        \"NWS\"\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        192
+      ],
+      "id": "400ca39d-2772-4c7d-8dd4-ee32a01323c0",
+      "name": "Convert to F"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code Node\n// Robust NWS Gridpoint Normalizer - Next Forecast Hour Only\n\nlet raw =\n  $input.first().json.data ||\n  $input.first().json.body ||\n  $input.first().json;\n\nif (typeof raw === \"string\") {\n  raw = JSON.parse(raw);\n}\n\nconst props = raw.properties;\n\nif (!props) {\n  throw new Error(\"No properties found. Check HTTP Request response format.\");\n}\n\nif (!props.temperature || !Array.isArray(props.temperature.values)) {\n  throw new Error(\n    \"No temperature.values found. Use https://api.weather.gov/gridpoints/OKX/33,37 and set HTTP Response Format to JSON.\"\n  );\n}\n\nconst fields = {\n  temperature: \"temperature_c\",\n  dewpoint: \"dewpoint_c\",\n  relativeHumidity: \"humidity_pct\",\n  apparentTemperature: \"feels_like_c\",\n  windSpeed: \"wind_speed\",\n  windDirection: \"wind_direction\",\n  probabilityOfPrecipitation: \"precip_probability_pct\",\n  quantitativePrecipitation: \"precip_mm\",\n  snowfallAmount: \"snowfall_mm\",\n  iceAccumulation: \"ice_mm\",\n  skyCover: \"sky_cover_pct\"\n};\n\nfunction durationToHours(duration) {\n  if (!duration) return 1;\n\n  const dayMatch = duration.match(/P(\\d+)D/);\n  const hourMatch = duration.match(/T(\\d+)H/);\n  const minMatch = duration.match(/T(\\d+)M/);\n\n  let hours = 0;\n\n  if (dayMatch) hours += Number(dayMatch[1]) * 24;\n  if (hourMatch) hours += Number(hourMatch[1]);\n  if (minMatch) hours += Math.ceil(Number(minMatch[1]) / 60);\n\n  return hours || 1;\n}\n\nfunction addHours(date, hours) {\n  return new Date(date.getTime() + hours * 3600000);\n}\n\nfunction toNumber(value, fallback = null) {\n  if (value === null || value === undefined) return fallback;\n  if (typeof value === \"number\") return value;\n\n  if (typeof value === \"string\") {\n    const match = value.match(/-?\\d+(\\.\\d+)?/);\n    return match ? Number(match[0]) : fallback;\n  }\n\n  return fallback;\n}\n\nconst rows = {};\n\nfor (const [sourceField, outputField] of Object.entries(fields)) {\n  const series = props[sourceField]?.values;\n\n  if (!Array.isArray(series)) continue;\n\n  for (const item of series) {\n    if (!item.validTime) continue;\n\n    const [startRaw, durationRaw = \"PT1H\"] = item.validTime.split(\"/\");\n    const start = new Date(startRaw);\n    const hours = durationToHours(durationRaw);\n\n    for (let h = 0; h < hours; h++) {\n      const ts = addHours(start, h).toISOString();\n\n      if (!rows[ts]) {\n        rows[ts] = {\n          timestamp: ts,\n          forecast_created_at: new Date().toISOString(),\n          office: props.gridId || null,\n          gridX: props.gridX || null,\n          gridY: props.gridY || null,\n          source: \"NWS\"\n        };\n      }\n\n      rows[ts][outputField] = toNumber(item.value, null);\n    }\n  }\n}\n\nconst now = new Date();\n\nconst output = Object.values(rows)\n.filter(row => {\n  const ts = new Date(row.timestamp);\n  const next24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);\n  return ts > now && ts <= next24h;\n})\n.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))\n  .map(row => ({\n    timestamp: row.timestamp,\n    forecast_created_at: row.forecast_created_at,\n\n    office: row.office,\n    gridX: row.gridX,\n    gridY: row.gridY,\n    source: row.source,\n\n    temperature_c: row.temperature_c ?? 0,\n    dewpoint_c: row.dewpoint_c ?? 0,\n    humidity_pct: row.humidity_pct ?? 50,\n    feels_like_c: row.feels_like_c ?? row.temperature_c ?? 0,\n    wind_speed: row.wind_speed ?? 5,\n    wind_direction: row.wind_direction ?? 180,\n    precip_probability_pct: row.precip_probability_pct ?? 0,\n    precip_mm: row.precip_mm ?? 0,\n    snowfall_mm: row.snowfall_mm ?? 0,\n    ice_mm: row.ice_mm ?? 0,\n    sky_cover_pct: row.sky_cover_pct ?? 50\n  }));\n\nreturn output.map(row => ({\n  json: row\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        192
+      ],
+      "id": "92099221-a7fe-44ba-881b-2729f94877f2",
+      "name": "Normalize NWS Data"
+    },
+    {
+      "parameters": {
+        "url": "https://api.weather.gov/gridpoints/OKX/33,37",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        112,
+        192
+      ],
+      "id": "80434b6c-f809-4c84-ad69-c811da303308",
+      "name": "KNYC NWS Observations"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "triggerAtMinute": 2
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -48,
+        192
+      ],
+      "id": "13471f41-e5e7-4914-810b-7f5fec968658",
+      "name": "Schedule prediction engine"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://weather-ml-api-uv0s.onrender.com/predict",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n{\n  \"timestamp\": $json.timestamp,\n  \"temperature_c\": $json.temperature_c,\n  \"dewpoint_c\": $json.dewpoint_c,\n  \"humidity_pct\": $json.humidity_pct,\n  \"wind_speed\": $json.wind_speed,\n  \"wind_direction\": $json.wind_direction,\n  \"precip_probability_pct\": $json.precip_probability_pct,\n  \"sky_cover_pct\": $json.sky_cover_pct\n}\n}}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 10
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        656,
+        192
+      ],
+      "id": "6d0be9da-d47e-4224-800f-b7b9502006ba",
+      "name": "prediction engine API",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "content": "11:55 PM update actual KNYC high",
+        "height": 224,
+        "width": 1408
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -128,
+        768
+      ],
+      "id": "b53c2fd7-5889-4011-b78c-5f2436e3b753",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "Daily high summary : NWS 24H forecast Forecast HIGH Insert/update weather_daily_high_predictions Update corrected_high_f from weather_predictions",
+        "height": 240,
+        "width": 1488
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -144,
+        416
+      ],
+      "id": "d23d7c90-c3df-407e-b1c2-554793a9b72b",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "Top flow: hourly prediction engine weather_predictions\nMiddle flow: daily forecast high weather_daily_high_predictions\nBottom flow: actual high + errors updates weather_daily_high_predictions",
+        "height": 80,
+        "width": 624
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -144,
+        0
+      ],
+      "id": "dedfc7e3-609a-468a-a706-43801acc5da7",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO weather_predictions (\n  forecast_time,\n  forecast_temperature_f,\n  corrected_temperature_f,\n  humidity_pct,\n  wind_speed,\n  wind_direction,\n  source,\n  created_at,\n  forecast_created_at,\n  sky_cover_pct,\n  precip_probability_pct,\n  dewpoint_f\n)\nVALUES (\n  '{{ $json.forecast_time }}',\n  {{ $json.forecast_temperature_f }},\n  {{ $json.corrected_temperature_f }},\n  {{ $json.humidity_pct }},\n  {{ $json.wind_speed }},\n  {{ $json.wind_direction }},\n  'NWS',\n  NOW(),\n  NOW(),\n  {{ $json.sky_cover_pct }},\n  {{ $json.precip_probability_pct }},\n  {{ $json.dewpoint_f }}\n)\nON CONFLICT (forecast_time, source)\nDO UPDATE SET\n  forecast_temperature_f = EXCLUDED.forecast_temperature_f,\n  corrected_temperature_f = EXCLUDED.corrected_temperature_f,\n  humidity_pct = EXCLUDED.humidity_pct,\n  wind_speed = EXCLUDED.wind_speed,\n  wind_direction = EXCLUDED.wind_direction,\n  created_at = EXCLUDED.created_at,\n  forecast_created_at = EXCLUDED.forecast_created_at,\n  sky_cover_pct = EXCLUDED.sky_cover_pct,\n  precip_probability_pct = EXCLUDED.precip_probability_pct,\n  dewpoint_f = EXCLUDED.dewpoint_f;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1056,
+        192
+      ],
+      "id": "fb34568a-80a3-41b3-825b-53875d43afd0",
+      "name": "Execute a SQL query4",
+      "credentials": {
+        "postgres": {
+          "id": "n3YMEXarMAGBbER7",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO weather_daily_high_predictions (\n  prediction_created_at,\n  target_date,\n  station,\n  forecast_high_f,\n  corrected_high_f,\n  forecast_low_f,\n  avg_humidity_pct,\n  avg_dewpoint_f,\n  avg_sky_cover_pct,\n  max_precip_probability_pct,\n  avg_wind_speed,\n  avg_wind_sin,\n  avg_wind_cos,\n  peak_heating_cloud_pct,\n  peak_heating_temp_f,\n  lead_hours,\n  month,\n  day_of_year,\n  source\n)\nVALUES (\n  '{{ $json.prediction_created_at }}',\n  '{{ $json.target_date }}',\n  '{{ $json.station }}',\n  {{ $json.forecast_high_f }},\n  NULL,\n  {{ $json.forecast_low_f }},\n  {{ $json.avg_humidity_pct }},\n  {{ $json.avg_dewpoint_f }},\n  {{ $json.avg_sky_cover_pct }},\n  {{ $json.max_precip_probability_pct }},\n  {{ $json.avg_wind_speed }},\n  {{ $json.avg_wind_sin }},\n  {{ $json.avg_wind_cos }},\n  {{ $json.peak_heating_cloud_pct }},\n  {{ $json.peak_heating_temp_f }},\n  {{ $json.lead_hours }},\n  {{ $json.month }},\n  {{ $json.day_of_year }},\n  '{{ $json.source }}'\n)\nON CONFLICT (target_date, station)\nDO UPDATE SET\n  prediction_created_at = EXCLUDED.prediction_created_at,\n  forecast_high_f = EXCLUDED.forecast_high_f,\n  forecast_low_f = EXCLUDED.forecast_low_f,\n  avg_humidity_pct = EXCLUDED.avg_humidity_pct,\n  avg_dewpoint_f = EXCLUDED.avg_dewpoint_f,\n  avg_sky_cover_pct = EXCLUDED.avg_sky_cover_pct,\n  max_precip_probability_pct = EXCLUDED.max_precip_probability_pct,\n  avg_wind_speed = EXCLUDED.avg_wind_speed,\n  avg_wind_sin = EXCLUDED.avg_wind_sin,\n  avg_wind_cos = EXCLUDED.avg_wind_cos,\n  peak_heating_cloud_pct = EXCLUDED.peak_heating_cloud_pct,\n  peak_heating_temp_f = EXCLUDED.peak_heating_temp_f,\n  lead_hours = EXCLUDED.lead_hours,\n  month = EXCLUDED.month,\n  day_of_year = EXCLUDED.day_of_year,\n  source = EXCLUDED.source;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        528,
+        480
+      ],
+      "id": "954e24eb-1e7e-43ff-9f8e-6d0b1b704c7b",
+      "name": "NWS insert prediction high",
+      "credentials": {
+        "postgres": {
+          "id": "n3YMEXarMAGBbER7",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE weather_daily_high_predictions d\nSET corrected_high_f = x.corrected_high_f\nFROM (\n  SELECT\n    (forecast_time AT TIME ZONE 'America/New_York')::date AS target_date,\n    MAX(corrected_temperature_f) AS corrected_high_f\n  FROM weather_predictions\n  GROUP BY\n    (forecast_time AT TIME ZONE 'America/New_York')::date\n) x\nWHERE d.target_date::date = x.target_date;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        768,
+        480
+      ],
+      "id": "d40f42b3-ada4-42b5-9e8a-3799a2fc1adc",
+      "name": "Update corrected_high_f",
+      "credentials": {
+        "postgres": {
+          "id": "n3YMEXarMAGBbER7",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Predict Data": {
+      "main": [[{ "node": "NWS OKX/33,37 24H", "type": "main", "index": 0 }]]
+    },
+    "Forecast HIGH": {
+      "main": [[{ "node": "NWS insert prediction high", "type": "main", "index": 0 }]]
+    },
+    "Schedule Actual HIgh": {
+      "main": [[{ "node": "KNYC actuals for EOD", "type": "main", "index": 0 }]]
+    },
+    "KNYC actuals for EOD": {
+      "main": [[{ "node": "Code in JavaScript", "type": "main", "index": 0 }]]
+    },
+    "Code in JavaScript": {
+      "main": [[{ "node": "Execute a SQL query1", "type": "main", "index": 0 }]]
+    },
+    "Schedule actuals latest": {
+      "main": [[
+        { "node": "Collect latest KNYC observations", "type": "main", "index": 0 },
+        { "node": "Collect latest KLGA observations", "type": "main", "index": 0 },
+        { "node": "Collect latest KJFK observations", "type": "main", "index": 0 },
+        { "node": "Collect latest KEWR observations", "type": "main", "index": 0 },
+        { "node": "Collect latest KTEB observations", "type": "main", "index": 0 }
+      ]]
+    },
+    "Collect latest KNYC observations": { "main": [[{ "node": "Merge", "type": "main", "index": 0 }]] },
+    "Collect latest KLGA observations": { "main": [[{ "node": "Merge", "type": "main", "index": 1 }]] },
+    "Collect latest KJFK observations": { "main": [[{ "node": "Merge", "type": "main", "index": 2 }]] },
+    "Collect latest KEWR observations": { "main": [[{ "node": "Merge", "type": "main", "index": 3 }]] },
+    "Collect latest KTEB observations": { "main": [[{ "node": "Merge", "type": "main", "index": 4 }]] },
+    "Merge": { "main": [[{ "node": "Return Observations", "type": "main", "index": 0 }]] },
+    "Schedule Predict Data1": { "main": [[{ "node": "NWS OKX/34,35 24H1", "type": "main", "index": 0 }]] },
+    "Forecast HIGH1": { "main": [[{ "node": "NWS insert prediction high1", "type": "main", "index": 0 }]] },
+    "Schedule Predict Data2": { "main": [[{ "node": "NWS OKX/36,33 24H2", "type": "main", "index": 0 }]] },
+    "Forecast HIGH2": { "main": [[{ "node": "NWS insert prediction high2", "type": "main", "index": 0 }]] },
+    "Schedule Predict Data3": { "main": [[{ "node": "NWS OKX/31,39 24H3", "type": "main", "index": 0 }]] },
+    "Forecast HIGH3": { "main": [[{ "node": "NWS insert prediction high3", "type": "main", "index": 0 }]] },
+    "NWS OKX/33,37 24H": { "main": [[{ "node": "Forecast HIGH", "type": "main", "index": 0 }]] },
+    "NWS OKX/34,35 24H1": { "main": [[{ "node": "Forecast HIGH1", "type": "main", "index": 0 }]] },
+    "NWS OKX/36,33 24H2": { "main": [[{ "node": "Forecast HIGH2", "type": "main", "index": 0 }]] },
+    "NWS OKX/31,39 24H3": { "main": [[{ "node": "Forecast HIGH3", "type": "main", "index": 0 }]] },
+    "Return Observations": { "main": [[{ "node": "Execute a SQL query", "type": "main", "index": 0 }]] },
+    "Limit": { "main": [[{ "node": "prediction engine API", "type": "main", "index": 0 }]] },
+    "Convert to F": { "main": [[{ "node": "Execute a SQL query4", "type": "main", "index": 0 }]] },
+    "Normalize NWS Data": { "main": [[{ "node": "Limit", "type": "main", "index": 0 }]] },
+    "KNYC NWS Observations": { "main": [[{ "node": "Normalize NWS Data", "type": "main", "index": 0 }]] },
+    "Schedule prediction engine": { "main": [[{ "node": "KNYC NWS Observations", "type": "main", "index": 0 }]] },
+    "prediction engine API": { "main": [[{ "node": "Convert to F", "type": "main", "index": 0 }]] },
+    "Execute a SQL query4": { "main": [[]] },
+    "NWS insert prediction high": { "main": [[{ "node": "Update corrected_high_f", "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "timeSavedMode": "fixed",
+    "timezone": "America/New_York",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "3cad4c1e-1c18-44e3-bc19-89225efb708c",
+  "id": "FGm7HPe1BIZC3lx8",
+  "tags": []
+}

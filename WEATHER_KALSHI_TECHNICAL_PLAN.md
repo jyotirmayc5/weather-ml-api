@@ -1,0 +1,307 @@
+# Weather → Kalshi Prediction Engine — Technical Plan
+
+**Owner:** Jyo / HaloFin.ai
+**Source system audited:** `PROD Weather 3` (n8n export, 3 sub-flows, Postgres/Supabase backend) + this repo (`weather-ml-api`, GitHub → Render)
+**Status:** Draft v2 — reconciled against actual repo contents, ready to execute
+
+> **v2 update:** incorporates two ChatGPT conversations on top of the original n8n-export audit, reconciled against a direct read of this repo's `main.py`. Two of the original recommendations are superseded — flagged inline. One claim from the v2 chats turned out to be wrong once checked against the actual code — also flagged inline, in §4a.
+>
+> **This repo is the seed.** `weather-ml-api` (this working directory) is not a separate system to migrate into — it already runs the bias-correction model live on Render (`weather-ml-api-uv0s.onrender.com`), has a working git-push → Render auto-deploy loop, and already implements `/predict-daily-high`. Everything below builds around what's already here (`main.py`, 2 commits) rather than starting a fresh project.
+>
+> **v3 update:** the real n8n export (`PROD Weather 3`, workflow id `FGm7HPe1BIZC3lx8`) has now been read directly and saved to `archive/n8n_export.json` in this repo. It's the ground truth for Phase 1 porting — Step 2's golden-file tests should be built against these exact Code nodes, not a paraphrase. §0 and §4 below are updated with what it actually contains, including a few things that don't match the informal description this plan started from.
+>
+> **v4 update:** the real Supabase schema for the three weather tables has now been pulled directly (via the SQL Editor — the DB password could not be gotten working through several reset attempts, so this is unverified against the direct connection, only against the dashboard's own SQL Editor session). Two things fell out of it: first, confirmation that `weather_daily_high_predictions` really does have `UNIQUE (target_date, station)`, which sharpens the §4a-adjacent daily-high insert concern from a "worth verifying" note into a confirmed latent risk (see the new §0b). Second, and more significant: there's a **fourth table, `weather_training_data`**, that nothing in the n8n export writes to at all — see §0b. This needs to be understood before Phase 1 can honestly claim "zero loss of continuity," and it likely changes where Phase 2 training data should come from.
+
+---
+
+## 0. What you actually have today
+
+**n8n side** — three sub-flows sharing one Postgres schema:
+
+| Flow | Trigger | Does | Writes to |
+|---|---|---|---|
+| Hourly prediction engine (`Schedule prediction engine`) | every hour at minute 2 (not 15 min — that cadence belongs to the *observations* flow) | NWS hourly point forecast (KNYC, gridpoint OKX/33,37) → normalize next-24h rows → cap to first 24 (`Limit` node) → POST to `weather-ml-api-uv0s.onrender.com/predict`, batched 10 at a time with retry+5s backoff → convert to °F | `weather_predictions`, upsert on `(forecast_time, source)`, `source` hardcoded to `'NWS'` in the SQL literal |
+| Daily high forecast — **4 separate, nearly-identical sub-flows**, not one flow looping over 4 points | all four fire at 9:45am ET (`0 45 9 * * *`) | Each pulls its own gridpoint's 24h forecast and builds the same feature row (avg humidity/dewpoint/sky cover, max precip prob, peak-heating window 12–16h NY, wind sin/cos, lead_hours, month, day_of_year) | `weather_daily_high_predictions`, one row per `(target_date, station)` — see station labels below |
+| Actuals | every 15 min (obs, `Schedule actuals latest`) + 11:55pm ET (EOD, `Schedule Actual HIgh`) | 15-min: pull latest obs from KNYC/KLGA/KJFK/KEWR/KTEB → merge → insert. 11:55pm: pull KNYC's full-day observations, compute actual high + morning(6–12)/afternoon(12–18)/6am/12pm/6pm pressure features → update daily table | `weather_observations` (insert `ON CONFLICT (station, observed_time) DO NOTHING` — true no-op, not an update); `weather_daily_high_predictions` (update, filtered to `WHERE station = 'KNYC'` only) |
+
+**The four daily-high station rows, exactly as the export writes them:**
+
+| `station` value | gridpoint | `source` value | Gets `actual_high_f`/errors from EOD flow? |
+|---|---|---|---|
+| `KNYC` | OKX 33,37 | `NWS OKX/33,37` | Yes — this is the only one the EOD `WHERE station = 'KNYC'` clause matches |
+| `GRID_34_35_COASTAL` | OKX 34,35 | `NWS OKX/34,35` | No |
+| `GRID_36_33_MARINE` | OKX 36,33 | `NWS OKX/36,33` | No |
+| `GRID_31_39_INLAND` | OKX 31,39 | `NWS OKX/31,39` | No |
+
+Only `KNYC` is a real observable station, so this isn't a bug to fix — the other three are synthetic gridpoint labels with no corresponding NWS observation station, so there's no way to backfill an "actual high" for them even in principle. That confirms (not just suggests) the plan's existing Phase 2 recommendation: use the 3 non-KNYC rows purely as ensemble-spread features (std dev across the 4 forecast_high_f values) around the KNYC prediction, never as their own labeled training rows.
+
+One thing that *is* worth verifying rather than assuming: the KNYC insert node (`NWS insert prediction high`) is raw SQL with an explicit `INSERT ... ON CONFLICT (target_date, station) DO UPDATE`. The three other insert nodes (`...high1`, `...high2`, `...high3`) instead use n8n's Postgres node UI-configured insert, with `matchingColumns: ["id"]` — matching on `id`, not `(target_date, station)`, and no `id` value is ever supplied in the payload. Depending on which operation the node actually resolves to at runtime, this could mean those three rows are always freshly inserted (fine, since target_date changes daily and a runaway duplicate would only occur on same-day reruns) or it could mean something less clean. Worth a quick check against the actual Supabase table history before relying on it — see checklist.
+
+Also worth knowing before writing golden-file tests: `weather_predictions` (hourly) computes wind as **average sin/cos of direction only** (a unit-circle average, ignoring speed), while `weather_observations` (actuals) computes `wind_u`/`wind_v` as **speed-scaled** sin/cos components. These are two different formulas that happen to share the words "wind" and "sin/cos" — don't let one shared helper function quietly merge them during the port.
+
+The `Normalize NWS Data` node also substitutes defaults for any missing NWS field before calling `/predict` — `temperature_c`/`dewpoint_c` → `0`, `humidity_pct`/`sky_cover_pct` → `50`, `wind_speed` → `5`, `wind_direction` → `180`, `precip_probability_pct` → `0`. A `sky_cover_pct` fallback of 50 lands squarely in `main.py`'s `PARTLY_CLOUDY` bucket (25–60), so a missing NWS field silently gets a real bias correction applied rather than being skipped. The Python port needs to reproduce these exact fallback values, not just "handle missing data reasonably" — golden-file tests should include at least one input with missing fields to pin this down.
+
+**This repo (`weather-ml-api`) side** — confirmed by reading `main.py` directly, not just the plan doc:
+
+- `POST /predict` — hourly bias correction. Buckets `sky_cover_pct` into SUNNY/PARTLY_CLOUDY/CLOUDY, applies a hardcoded `SKY_BIAS_C` (converted from `SKY_BIAS_F`), capped to ±1°C "while dataset is small." Live, called by the n8n hourly flow.
+- `POST /predict-daily-high` — **this is not a stub.** It's fully implemented: buckets `avg_sky_cover_pct` the same way, *and* buckets `pressure_change_hpa` into FALLING/RISING/STABLE and applies `PRESSURE_BIAS_F` (2.33 / 1.10 / 1.18), sums both bias terms, returns `bias_corrected_high_f`. Both bias tables are commented "measured from SQL," i.e. fit on real observed data. What's actually true is narrower than "unwired": the model logic exists and works, but nothing currently calls this endpoint with a populated `pressure_change_hpa` — so it's *unused*, not *unbuilt*.
+- 2 commits total (`initial weather api`, `Add bias corrected forecast model`). No `jobs/`, `db/`, tests, or n8n export in this repo yet.
+
+**What's already good and worth keeping:** the feature set (peak-heating window, wind decomposed to sin/cos, multi-grid-point sampling, pressure trend features), the upsert-based idempotent writes, and — critically — the fact that you're *already logging forecast error* (`raw_error_f`, `corrected_error_f`). That error history is your training/calibration data for Phase 2 and most teams don't have it.
+
+### 0b. Real Supabase schema — confirms one risk, surfaces a bigger unknown
+
+Pulled directly from `information_schema`/`pg_catalog` via the Supabase SQL Editor (see checklist — the direct DB-password connection never got working after several reset attempts, so this hasn't been cross-checked against `psql`/SQLAlchemy yet, only against the dashboard's own session).
+
+**Confirmed: `weather_daily_high_predictions` has `UNIQUE (target_date, station)`** (constraint `daily_high_unique`) — this is real, not hypothetical. Which means the §0 finding about the three non-KNYC daily-high insert nodes is a confirmed latent risk: those three nodes (`NWS insert prediction high1/2/3`) are configured as n8n Postgres upserts matched on `id`, an auto-generated column never supplied in the payload, so they execute as plain inserts with no `ON CONFLICT` clause targeting `(target_date, station)` at all.
+
+**And it's not just latent — it's happened.** Querying `weather_daily_high_predictions` directly (`group by target_date having count(distinct station) < 4`) found exactly 2 dates where this actually failed in production: **2026-05-25** and **2026-07-28**, both showing only the `KNYC` row present — all three non-KNYC stations completely missing for those dates, not merely duplicated. The failure shape is slightly different from what was first guessed (a complete miss rather than a duplicate-key collision from a same-day rerun), but the underlying cause is the same missing-upsert issue. Root cause not yet pinned to an exact error message — that needs n8n's Executions view for those 2 specific dates around 9:45am ET, which is a much more targeted check now than searching blindly. Whatever the precise trigger, the fix is the same either way: make sure the ported `daily_high_forecast_job.py` always uses a real upsert on `(target_date, station)` for all four stations, not just KNYC.
+
+(Minor, non-urgent oddity noticed in the same table: there's a *second* unique constraint, `UNIQUE (prediction_created_at, target_date, station)`, alongside `daily_high_unique`. Since `prediction_created_at` is set to "now" on every insert, that second constraint can practically never be violated by anything — it's not doing any real dedup work, `daily_high_unique` is the one that matters. Harmless schema cruft, not worth cleaning up as part of this migration.)
+
+**`weather_training_data` — mystery mostly resolved.** Queried directly: 37 rows total, all created in a single burst between `2026-05-23 22:28` and `2026-05-24 15:30` UTC (2 rows the first day, 35 the second), covering `forecast_time` from `2026-05-23 13:00` to `2026-05-24 15:00` — about 26 hours of data, across 3 stations (KNYC, KLGA, KEWR). **This is a one-time backfill, not an ongoing pipeline** — confirmed two ways: the burst pattern itself, and `source` being `NULL` on every single row, whereas n8n's real `weather_predictions` insert always writes the literal string `'NWS'`. A different writer produced this table — almost certainly a one-off script or notebook that joined `weather_predictions` and `weather_observations` by matching time and precomputed `raw_forecast_error_f`/`corrected_forecast_error_f`. Given the timing (this data ends May 24; `main.py`'s bias-correction commit landed June 18) and that it already has both error columns filled in, this is very likely the small sample `SKY_BIAS_F`/`PRESSURE_BIAS_F` were fit on. Not fully confirmed — worth asking whoever built it (possibly you, from an earlier session) to be certain — but the data itself makes the "ongoing pipeline" question moot either way: nothing currently keeps it current, and Phase 1's "zero loss of continuity" doesn't need to reproduce it.
+
+**Correction to earlier guidance in this plan:** an earlier draft suggested Phase 2 Step 1 ("assemble the training set") should start from `weather_training_data` rather than `weather_daily_high_predictions`, reasoning it might be the cleaner, pre-joined source. Now that the actual data is visible, that's wrong — 37 rows over one day is nowhere near a usable training set. `weather_daily_high_predictions` (331 rows, spanning real operating history per the row-count check in the checklist) is the real Phase 2 starting point, as the plan originally said before that detour.
+
+**What's missing for "confident" + Kalshi-grade:**
+1. No version control depth, no tests — the timezone/unit-conversion JS in n8n is fragile and invisible to git diffs.
+2. No local dev/staging environment — every n8n change is live-editing production.
+3. The daily forecast is a **point estimate** (`forecast_high_f`). Kalshi settles on strike thresholds ("will the high be ≥73°F"), so you need `P(high ≥ X)` for each relevant strike, not one number.
+4. No backtesting harness — you can't yet answer "would this model have beaten the market's implied odds historically."
+5. `/predict-daily-high`'s pressure bias is a real risk *right now*, not a future one — see §4a. It's live code that will silently misapply if fed the wrong kind of pressure input.
+
+---
+
+## 1. Goals, in order
+
+- **Phase 1 — Migrate:** reproduce the current n8n system as version-controlled code in this repo with test coverage, zero loss of data continuity. Parity migration, not a redesign.
+- **Phase 2 — Upgrade:** turn the daily-high point forecast into a calibrated probability distribution suitable for pricing Kalshi strikes, backed by a real backtest.
+- **Phase 3 — Optional, later:** read-only Kalshi market integration (model probability vs market-implied probability), then paper trading, then — only if Phase 2's backtest shows real edge — small manual-approved live positions.
+
+Do not skip to Phase 3. A model that hasn't been backtested against historical Kalshi settlement data has no business touching real orders.
+
+---
+
+## 2. Recommended stack
+
+| Concern | Choice | Why |
+|---|---|---|
+| Language | Python 3.11+ | Best ecosystem for weather data (xarray, NWS clients) + ML (lightgbm, scikit-learn) |
+| Package/env mgmt | `uv` | Fast, single lockfile, simple for a solo-maintained repo |
+| API framework | FastAPI | Already what `main.py` uses — extend it, don't replace it |
+| DB | Keep Supabase Postgres | No reason to migrate data; add SQLAlchemy models + Alembic migrations on top |
+| Orchestration | **Render Cron Jobs** *(v1 said GitHub Actions — superseded)* | Render guarantees single-run-at-a-time semantics and reads secrets from the same env you already use for this repo's web service; GitHub Actions' scheduled runs can be delayed under platform load, a real risk for a 9:45am/11:55pm-timed system. You're already deployed on Render — no new platform to learn. |
+| Job shape | **Plain Python scripts invoked directly by cron** *(v1 implied everything through FastAPI — superseded)* | Don't route every scheduled job through an HTTP call to your own API. Use FastAPI only for the model-serving endpoints (`/predict`, `/predict-daily-high`) and manual/health-check access. Cron jobs call the DB and NWS/Open-Meteo directly. Fewer moving parts, one less network hop to fail. |
+| Modeling | pandas, scikit-learn, LightGBM (quantile objective) | Standard approach for "point forecast → calibrated distribution" |
+| Backtesting | Custom harness in `notebooks/` + `src/backtest/` | Nothing off-the-shelf fits this exact shape (daily strike settlement) |
+| Deployment | Same Render account/service this repo already deploys to | Zero migration friction |
+| Kalshi access | `kalshi-python` or raw REST + API key | REST is simple enough to hand-roll if you want zero extra dependency |
+| CI | GitHub Actions | Lint, type-check, run unit tests, run ingestion golden-file tests on every PR — fine for CI, just not for time-sensitive scheduling |
+
+**Scale check, for why this stack and not something heavier:** job frequencies are roughly 2,880 runs/month (15-min observations), 720/month (hourly forecast), ~30/month each for daily-high, actual-high, and the future Kalshi-prediction job. Nowhere near where Celery/Redis/Airflow/Prefect/Kubernetes complexity earns its keep for a solo-maintained system — plain Render Cron Jobs handle this comfortably. Don't add any of that machinery unless a specific, concrete need shows up later.
+
+---
+
+## 3. Repo structure
+
+Evolved from what's here now — `main.py`'s two endpoints move into `prediction_api/` essentially unchanged, everything else is added around them.
+
+```
+weather-ml-api/                 # keep the name, or rename — your call
+├── README.md
+├── pyproject.toml
+├── .env.example
+├── render.yaml                 # 1 web service + 6 cron jobs, IaC-style
+├── jobs/                       # plain scripts, each invoked directly by a Render Cron Job
+│   ├── latest_observations_job.py     # every 15 min: KNYC/KLGA/KJFK/KEWR/KTEB → weather_observations
+│   ├── hourly_forecast_job.py         # hourly: NWS gridpoint forecast → weather_predictions
+│   ├── daily_high_forecast_job.py     # 9:45am ET: NWS 24h gridpoint(s) → weather_daily_high_predictions
+│   ├── corrected_high_update_job.py   # after hourly/daily jobs: backfill corrected_high_f
+│   ├── daily_prediction_job.py        # after daily_high_forecast_job: Kalshi strike probabilities
+│   └── actual_high_update_job.py      # 11:55pm ET: KNYC actuals → actual_high_f + errors
+├── src/
+│   ├── ingestion/
+│   │   ├── nws_client.py       # wraps api.weather.gov, tenacity retries
+│   │   └── open_meteo_client.py# pressure forecast (see §4a — not wired to /predict-daily-high yet)
+│   ├── features/
+│   │   └── daily_features.py   # shared feature engineering (used by jobs/ AND training)
+│   ├── models/
+│   │   ├── bias_correction.py  # existing sky/pressure bias logic, ported as-is
+│   │   ├── quantile_model.py   # Phase 2: distributional daily-high model
+│   │   └── artifacts/          # versioned model files, gitignored, pulled from storage
+│   ├── prediction_api/
+│   │   └── main.py             # current main.py, extended — API access only, not called by jobs/
+│   ├── db/
+│   │   ├── models.py           # SQLAlchemy models mirroring existing tables + job_runs
+│   │   └── migrations/         # Alembic
+│   └── kalshi/
+│       ├── client.py           # Phase 3: market data + order placement
+│       └── edge.py             # model prob vs market-implied prob
+├── src/backtest/
+│   └── daily_high_backtest.py
+├── tests/
+│   ├── test_hourly_forecast.py     # golden-file tests against real n8n input/output pairs
+│   ├── test_daily_features.py
+│   ├── test_predict_daily_high.py  # covers both sky AND pressure bias branches — see §4a
+│   └── test_station_obs.py
+└── notebooks/
+    └── eda_error_history.ipynb     # start here for Phase 2 — you already have error history
+```
+
+**`job_runs` table** (new, small, worth adding immediately): every job in `jobs/` writes a row on start and on finish/failure — `job_name, started_at, finished_at, status, error_message`. This is your only visibility into cron health once n8n's execution log is gone.
+
+---
+
+## 3a. Testing strategy
+
+**Framework & layers:**
+- `pytest` for everything Python-side; FastAPI's `TestClient` (via `httpx`) for endpoint tests — no network calls needed for those.
+- **Golden-file tests, generated from the real JS, not hand-derived.** Node is installed on this machine (`v24.15.0`). Rather than reading the n8n Code node JS and guessing what it outputs, extract each node's JS verbatim from `archive/n8n_export.json` into a standalone script under `tests/fixtures/n8n_js/`, wrap it in a tiny harness that reads a JSON input and writes a JSON output, and actually run it. The Python port then gets tested against those real captured outputs. This is the only way to be confident the port is faithful rather than "faithful to my reading of the code" — it also protects against silently "fixing" a quirk during the port that turns out to matter (see the `lead_hours` DST issue and the sky-cover-bias cap below).
+- **DB/upsert tests need real Postgres**, not SQLite — SQLite doesn't enforce `ON CONFLICT` the same way. Use a local Docker Postgres container for these (isolated, fast, no risk to prod data) rather than testing against the live Supabase project. **Docker isn't installed on this machine** (checked — `docker` isn't on PATH), so true integration tests against a real server aren't possible yet. In the meantime, `tests/test_upsert_sql.py` compiles the upsert statements against the Postgres dialect and asserts on the generated SQL text — it can't prove the SQL executes correctly, but it does directly test the exact bug class found in §0b (missing `ON CONFLICT (target_date, station)` on 3 of 4 stations): one test asserts the daily-high upsert produces a real `ON CONFLICT (target_date, station) DO UPDATE` for all 4 stations identically, not just KNYC. Install Docker Desktop (or point at a disposable Postgres some other way) to unlock the full integration layer.
+- Phase 2's backtest (`src/backtest/daily_high_backtest.py`) isn't a pytest suite — it's validated by its own Brier-score/log-loss output against historical data, not pass/fail assertions. Keep it conceptually separate from this test suite.
+
+**Priority order — mirrors the §4 Step 5 cutover order, so nothing gets ported without a safety net first:**
+1. `/predict` and `/predict-daily-high` as they exist in `main.py` right now — self-contained, zero external dependencies, start here.
+2. `Normalize NWS Data` + `Convert to F` (hourly ingestion) — needs the Node harness.
+3. `Forecast HIGH` (×4, parameterized by station/source) — needs the Node harness; include a fixture that crosses a DST boundary here specifically, since this is where the `lead_hours` double-timezone-conversion issue (§4 Step 2) lives.
+4. `Code in JavaScript` (EOD actuals + pressure features) — needs the Node harness.
+5. Upsert/constraint tests — needs local Postgres, and should assert `daily_high_unique (target_date, station)` behavior specifically, given the §0b finding about the three non-KNYC insert nodes.
+
+**CI:** GitHub Actions runs the pytest suite on every push/PR (per §2's stack table) — a `postgres:` service container in the workflow covers the DB-dependent tests; everything else needs nothing beyond the checkout.
+
+**Update — the Python ports exist and pass against the golden fixtures, byte-for-bit.** `src/ingestion/normalize.py` (`normalize_nws_data`, `convert_to_f`), `src/features/daily_features.py` (`forecast_high`, parameterized by `station`/`source` instead of the 4 near-duplicate n8n copies), and `src/features/actuals.py` (`eod_actuals_and_pressure`) are all ported and asserted exactly equal to their golden fixtures in `tests/test_golden_fixtures.py` (25/25 tests green, including the DST fixture reproducing the real ~29.2-hour buggy `lead_hours` value from §4 Step 2).
+
+One more fidelity gotcha surfaced while getting `eod_actuals_and_pressure` to match: **Python 3.12+'s built-in `sum()` uses a more numerically precise summation algorithm (Neumaier summation) for floats than JS's naive `Array.prototype.reduce((a,b)=>a+b,0)`.** For the pressure-averaging fixture, this meant Python's `sum()` and JS's `reduce()` genuinely disagreed by a hair — Python's more-accurate sum landed on `1011.5500000000001`, JS's less-accurate one on `1011.5499999999998` — and that hairline difference was enough to flip the final rounded digit (`1011.6` vs `1011.5`). Fixed by adding an explicit `_js_sum()` helper (a plain accumulator loop) in both `daily_features.py` and `actuals.py`, used everywhere the original JS did `.reduce(...)` before `.toFixed(1)`. This is a real, general trap for anyone porting JS numeric code to modern Python — worth remembering for any remaining porting work (`Return Observations`, later model/backtest code, etc.): don't assume Python's `sum()` is a drop-in replacement for JS's `reduce()` when exact fidelity matters, even though both are "just summing a list."
+
+**Update — the fixture harness now exists and has already paid for itself.** `tests/fixtures/n8n_js/` contains: `extract_nodes.py` (pulls the 4 target Code node scripts verbatim from `archive/n8n_export.json`, no manual transcription — `normalize_nws_data.js`, `forecast_high.js`, `eod_actuals_pressure.js`, `convert_to_f.js`), `harness.js` (runs any of them under Node with a controlled input and a frozen `Date`/`Date.now()` so output is fully deterministic; pins `process.env.TZ = "UTC"` to match Render's container timezone — **now confirmed, not assumed**: running `date` directly in Render's Shell tab against the live `weather-ml-api` service returned `Tue Aug 25 00:17:19 UTC 2026`, so the `lead_hours` finding below is real production behavior, not a harness artifact), and `build_inputs.py` (hand-constructed, NWS-API-shaped synthetic inputs designed to hit specific edge cases — missing fields, the peak-heating window, and a real DST spring-forward boundary — rather than whatever today's live data happens to contain). Five golden fixtures are captured under `inputs/`/`golden/`: `normalize_normal`, `forecast_high_normal`, `forecast_high_dst`, `eod_actuals_normal`, `convert_to_f_normal`. Running the DST fixture and tracing the output by hand is what overturned the `lead_hours` claim below — this is exactly the payoff the golden-fixture approach was for. `convert_to_f_normal`'s output also empirically confirms the `predicted_error_c ?? null` dead-field observation from §0: it resolves to `null`, as expected, since `main.py`'s `/predict` never returns that field. Remaining for this layer: write the actual Python ports and assert them against these fixtures (not done yet — the fixtures exist, the ported functions don't).
+
+**A finding from actually working through the numbers while designing the `/predict` tests, worth capturing explicitly as a test case:** `main.py`'s hourly `/predict` endpoint caps `bias_c` to `[-1.0, 1.0]`°C "while dataset is small." `SKY_BIAS_C["PARTLY_CLOUDY"]` (1.93°F ÷ 1.8 ≈ 1.072°C) and `SKY_BIAS_C["CLOUDY"]` (2.28°F ÷ 1.8 ≈ 1.267°C) **both exceed that cap**, so both buckets get clamped to exactly `1.0`°C — meaning `/predict` currently cannot numerically distinguish a partly-cloudy hour from a cloudy one; only `SUNNY` (0.75°C, under the cap) comes through un-clamped. `/predict-daily-high` doesn't have this issue — it applies `SKY_BIAS_F` directly in Fahrenheit with no cap, so `CLOUDY` (2.28) and `PARTLY_CLOUDY` (1.93) stay distinct there. This is real, currently-live behavior in the hourly endpoint, not a hypothetical — the golden-file test for `/predict` should assert this collapse explicitly (both buckets producing `bias_c == 1.0`) so it's a documented, intentional-until-decided fact rather than something that gets silently "fixed" during the port without anyone noticing the behavior changed.
+
+## 4. Phase 1 — Replace the n8n flow (target: 1–2 weeks)
+
+**Step 1 — Repo bootstrap**
+- `uv init` in place (this repo), add SQLAlchemy, httpx, pytest, pydantic alongside the existing fastapi/uvicorn/pydantic.
+- Pull the Supabase connection string into `.env` (never commit it — `.env.example` only).
+- Add SQLAlchemy models for the three existing tables exactly as they are (`weather_observations`, `weather_predictions`, `weather_daily_high_predictions`) — don't change schema yet, just describe what exists.
+- **Needed from you to actually start this:** the n8n export JSON (for the Code node logic to port), and either the Supabase schema/DDL or read access to it, so the SQLAlchemy models match reality instead of being guessed.
+
+**Step 2 — Port ingestion logic 1:1, with tests**
+- For each n8n Code node (hourly normalizer, daily `Forecast HIGH*` feature builder, EOD actuals + pressure-feature computer), write a pure Python function with the *exact* same logic: same timezone handling (`America/New_York` via `zoneinfo`, not naive UTC math), same unit conversions, same peak-heating window (12–16h), same wind sin/cos decomposition.
+- Before writing each function, capture 2–3 real input/output pairs from live n8n executions and turn them into golden-file tests. This is the single highest-leverage step — it's what lets you say "confidently replaced" rather than "probably replaced."
+- Watch DST edge cases specifically — n8n's `Intl.DateTimeFormat`/`toLocaleString` round-tripping is a known footgun around DST transitions. Use `zoneinfo` directly in Python and add a test for a date crossing a DST boundary.
+- Concretely, in the real export's `Forecast HIGH` node, `lead_hours` is computed as `new Date(new Date(\`${nyDate}T23:59:59\`).toLocaleString("en-US", {timeZone: "America/New_York"}))` — parsing a date-only string as server-local time, formatting it *as if* it were NY time, then re-parsing that string as server-local time again. **Corrected finding, verified by actually running the extracted code (v5, see §3a fixtures) — this is worse than originally described.** Earlier drafts of this plan speculated it "produces a usable number today... will drift by exactly the DST offset (1 hour) for the days around a DST transition." That was unverified guessing and it's wrong: running the real JS through the fixture harness (Render's container timezone is confirmed UTC — `date` run directly in Render's Shell tab returned `Tue Aug 25 00:17:19 UTC 2026` — matching the harness) shows `lead_hours` is off by a full **~8 hours, every single day, DST or not, in live production right now** — not a 1-hour edge-case drift. Traced by hand: the code intends `targetEndUTC` to be 23:59:59 NY-local converted to UTC (which for `2026-06-17` should be `2026-06-18T03:59:59Z`), but the double round-trip through system-local-time parsing actually produces `2026-06-17T19:59:59Z` — 8 hours short, because the NY UTC offset gets subtracted twice instead of once (once correctly via `toLocaleString`, once accidentally via the second `new Date(...)` mis-parsing an already-NY-local string as system-local again). The DST fixture (`forecast_high_dst.json`, predicting the March 8 2026 spring-forward day) shows the same ~8-hour error, confirming this isn't DST-transition-specific — DST would just change the exact magnitude (8h in EDT vs ~10h in EST), not introduce the bug. If `lead_hours` is used as a model feature anywhere downstream, this means it's been carrying a large, roughly-constant offset rather than a true forecast-lead measurement — not necessarily catastrophic for a model (a consistent bias is learnable), but worth knowing precisely rather than assuming it was "mostly fine." Same file's `month`/`day_of_year` are computed from `nowNY = new Date()` — despite the name, that's just server time, not NY time; `day_of_year` in particular is computed from `nowNY.getFullYear()` in server-local time, which is wrong specifically on Dec 31/Jan 1 if server and NY disagree on what year it is (this part matched expected values in both fixtures, so it's likely fine most of the year). None of this is a live production emergency, but the Python port must not "reasonably improve" this logic silently — reproduce the existing numeric behavior in golden-file tests first (now captured — see §3a), then fix it as a deliberate, tested, separately-reviewed change, since a trained model may already depend on the current, wrong `lead_hours` values.
+- By contrast, the EOD actuals HTTP node builds its request URL with `$now.setZone('America/New_York').startOf('day').toUTC()...` — n8n's built-in Luxon-based date expressions, which are DST-safe. The DST risk is confined to the Code nodes' native JS Date/Intl logic, not the n8n expression-language parts.
+- **Also add now, since it's already live and untested:** golden-file tests for `/predict` and `/predict-daily-high` as they exist today, covering all three sky-cover buckets and — critically — all three pressure buckets, before anything gets refactored. You don't currently have any test coverage on the pressure-bias branch at all.
+
+**Step 3 — Port the DB writes**
+- Reproduce the `ON CONFLICT ... DO UPDATE` upsert semantics exactly (SQLAlchemy's `insert().on_conflict_do_update()` for Postgres). Your reconciliation logic (`raw_error_f`/`corrected_error_f`) depends on rows being updated in place, not duplicated.
+
+**Step 4 — Extend the prediction API in place**
+- Keep `/predict` and `/predict-daily-high` behavior identical while moving the file to `src/prediction_api/main.py`. Don't change bias logic as part of this move — that's a separate, later, data-driven decision.
+
+**Step 5 — Orchestration cutover strategy, in this specific order**
+
+Shadow mode first, always: keep n8n running untouched, point the new Render Cron Job at a parallel staging table (`_v2` suffix) or a diff-check script, and don't disable the corresponding n8n trigger until outputs have matched for several consecutive runs. Job-by-job, cheapest/lowest-risk first:
+
+1. **`latest_observations_job.py`** — simplest job (5 parallel GETs + insert), highest run frequency (every 15 min → 2,880 runs/month), so it validates retry/idempotency plumbing fastest. Cut over first.
+2. **`daily_high_forecast_job.py`** — port the `Forecast HIGH*` feature-engineering code exactly; this is the one to get bit-for-bit right since it's also your future Kalshi model's input.
+3. **`actual_high_update_job.py`** — depends on observations already flowing correctly, so it comes after step 1's job is proven.
+4. **`hourly_forecast_job.py`** — wraps the already-live `/predict` call; lowest risk since the model itself doesn't change.
+5. **`daily_prediction_job.py`** — new, wires up `/predict-daily-high` for the first time end-to-end. This is genuinely new (nothing calls this endpoint today), so give it its own validation period rather than bundling it into the migration. **Do not populate `pressure_change_hpa` from a forecast source here without reading §4a first.**
+6. **`corrected_high_update_job.py`** — the backfill job; runs after 2 and 4 are both stable.
+
+After each job has matched n8n's output for **7–14 consecutive days**, disable that specific n8n trigger. Don't do a single cutover.
+
+**Step 6 — Decommission**
+- Once all six jobs are cut over and stable, re-export the n8n workflow one final time (in case it changed since `archive/n8n_export.json` was captured) and overwrite that file, then deactivate/delete the n8n workflow.
+
+### 4a. `/predict-daily-high`'s pressure bias: live, correct today, but a real trap for step 5.5
+
+Earlier drafts of this plan (based on the ChatGPT conversations, before the code was actually read) described the forecast-pressure feature as "deliberately deferred, not yet wired in." **That's wrong about the current state** — `main.py` already has `PRESSURE_BIAS_F` hardcoded and applied inside `/predict-daily-high`, alongside the sky-cover bias, in the same commit. The endpoint works today for anyone who calls it with a real `pressure_change_hpa`.
+
+The actual risk is narrower and more concrete:
+- `PRESSURE_BIAS_F`'s three constants are commented "measured from SQL" — almost certainly fit against **actual observed** `pressure_change_hpa` from the EOD actuals flow, not a forecast value.
+- When `daily_prediction_job.py` (step 5 above) gets built, it will be tempting to feed it **forecast** pressure change from Open-Meteo, since that's the only pressure data available *before* the day's high is known. Forecast pressure change is not the same distribution as actual pressure change — it has its own error characteristics — so applying an actual-pressure-trained bias to a forecast-pressure input will silently produce a wrong correction with no error to signal it.
+- Don't do that swap without retraining. When you do wire a forecast-pressure input in: add it as new columns (`forecast_morning_pressure_hpa`, `forecast_afternoon_pressure_hpa`, `forecast_pressure_change_hpa`) alongside — not replacing — the existing actual-pressure columns, accumulate paired forecast-vs-actual data, and fit a separate bias term specifically on forecast-vs-actual pairs before ever calling `/predict-daily-high` with a forecast-derived `pressure_change_hpa`.
+- Until that retraining happens, the safest use of `/predict-daily-high` in production is to *not* pass `pressure_change_hpa` at all (it's optional — the endpoint degrades to sky-cover-only bias, which is what's actually validated), or to pass actual same-day pressure change only in contexts where that's genuinely what you have (e.g., a same-day backfill/correction pass, not a forward forecast).
+
+---
+
+## 5. Phase 2 — Kalshi-grade daily-high engine (target: 3–5 weeks after Phase 1)
+
+**Step 1 — Assemble the training set**
+- Pull all `weather_daily_high_predictions` rows with a non-null `actual_high_f` — this is your labeled dataset, features at forecast time → actual outcome.
+- Backfill further history if you have less than ~1–2 full seasons; NWS/NOAA archives are pullable further back.
+
+**Step 2 — Expand features**
+- Add NBM or HRRR model output as additional predictors alongside the raw NWS point forecast — multi-model ensembles reduce single-model bias, which matters for a threshold-sensitive product like Kalshi strikes.
+- Keep the existing multi-grid-point sampling (33/37, 34/35, 36/33, 31/39) as ensemble spread features (std dev across the 4 points is itself informative — high disagreement = lower confidence day).
+- Add simple climatology (historical average high for that calendar day) as a baseline feature.
+
+**Step 3 — Move from point estimate to distribution**
+- Train a LightGBM model with the quantile objective at several quantiles (0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95) conditioned on your feature set. This gives you a predicted CDF for the day's high, from which `P(high ≥ X)` for any Kalshi strike `X` falls out directly.
+- Faster fallback: keep the point-forecast model, fit the *residual distribution* (`raw_error_f`/`corrected_error_f` history) conditioned on season and lead_hours, convolve with the point forecast to get a probability at each strike. Legitimate, much faster first version — consider doing this before the full quantile model.
+
+**Step 4 — Backtest**
+- Build `src/backtest/daily_high_backtest.py`: for each historical day, take the forecast that would have existed at 9:45am that day, compute implied probability at each strike Kalshi actually listed, score against the realized outcome with Brier score and log loss.
+- If you can get historical Kalshi settlement prices for the same market/dates, score "just use the market price" as your baseline. Your model needs to beat that, not just have a low Brier score in isolation.
+
+**Step 5 — Calibration check**
+- Plot a reliability diagram (predicted probability bucket vs actual frequency). If systematically off, apply isotonic regression as a final calibration layer rather than retraining from scratch.
+
+**Step 6 — Read-only Kalshi integration**
+- Pull live market strikes and prices via the Kalshi API. Compute `model_probability - market_implied_probability` per strike and log it for at least a few weeks before touching order placement — you want to see if backtested edge persists live or evaporates (very common).
+
+**Step 7 — Only if Step 6 shows persistent, real edge: paper trading, then small live positions**
+- Fixed, small position sizing (e.g., capped Kelly fraction), hard daily loss limit, manual approval before any live order, at least initially.
+
+---
+
+## 6. Risk notes
+
+- Not financial advice — the backtesting and calibration steps exist so you're trading on validated edge rather than backtest overfitting, the single most common way projects like this lose money.
+- Confirm Kalshi's API terms of service and any account-level restrictions on automated trading before building Phase 3.
+- Treat "the model looked great in backtest" with skepticism until it's held up out-of-sample, live, for a meaningful stretch (Step 6) — this is the step most people skip and shouldn't.
+
+---
+
+## 7. Immediate next steps checklist
+
+- [x] Get the n8n export JSON into hand — saved to `archive/n8n_export.json`
+- [x] Get the Supabase schema for the 3 known weather tables — pulled via SQL Editor, see §0b (still not cross-checked via a direct `psql`/SQLAlchemy connection — the DB password never authenticated after several resets; low priority to keep chasing since the SQL Editor route worked)
+- [x] Confirmed `weather_daily_high_predictions` has `UNIQUE (target_date, station)` — the 3 non-KNYC insert nodes' lack of a real `ON CONFLICT` on that pair is a genuine latent risk on reruns, not just theoretical — see §0b
+- [ ] `uv init` in this repo (don't create a new one), add deps alongside existing fastapi/uvicorn/pydantic
+- [x] Find out what populates `weather_training_data` — resolved by querying it directly: a one-time 37-row backfill from May 23-24, not an ongoing pipeline (see §0b for the evidence). Not 100% confirmed who/what built it, but that no longer blocks anything.
+- [x] Confirmed real, via direct data query rather than n8n's UI: `select target_date, count(distinct station), array_agg(distinct station) from weather_daily_high_predictions group by target_date having count(distinct station) < 4` returns exactly 2 dates — **2026-05-25** and **2026-07-28** — where only `KNYC` has a row and all 3 non-KNYC stations (`GRID_34_35_COASTAL`/`GRID_36_33_MARINE`/`GRID_31_39_INLAND`) are completely missing, not just duplicated. Slightly different failure shape than originally guessed (a full miss, not a duplicate-key collision from a rerun), same underlying root cause (no real upsert on `(target_date, station)` for those 3 nodes). Root cause not yet pinned down precisely — [ ] still open: check n8n's Executions view around 9:45am ET on those 2 specific dates for the actual error text on `high1`/`high2`/`high3`.
+- [x] Write golden-file tests for `/predict` and `/predict-daily-high` as they exist right now — `tests/test_predict.py` + `tests/test_predict_daily_high.py`, 20 tests, all passing. Surfaced two real behavior quirks worth knowing before ever touching `main.py` again: (1) `/predict`'s `bias_c` safety clamp collapses `PARTLY_CLOUDY` and `CLOUDY` to the same value, they're currently indistinguishable there; (2) `/predict-daily-high`'s `bias_f` and `bias_corrected_high_f` are rounded independently from different underlying floats and can disagree by 0.1 (e.g. `70 + 1.4 != 71.3`, but that's what it actually returns) — both documented in Sec 3a and pinned down as test assertions
+- [x] Write golden-file tests for `Forecast HIGH`'s `lead_hours`/`month`/`day_of_year` computation pinning down *current* (imperfect) behavior before any DST-safety fix — done via `forecast_high_dst` fixture, which is what surfaced the corrected ~8-hour finding above
+- [x] Move `main.py` → `src/prediction_api/main.py`, behavior unchanged — real code now lives at `src/prediction_api/main.py`; root `main.py` is a 1-line re-export shim (`from src.prediction_api.main import app`) so Render's dashboard-configured start command (`uvicorn main:app`, presumed — there's no `Procfile`/`render.yaml` in this repo to confirm it) keeps working without any out-of-band Render change. Verified by actually running `uvicorn main:app` locally and hitting all 3 endpoints — identical output to before.
+- [x] Port the hourly normalizer (`normalize_nws_data`) + `convert_to_f` + write their tests — `src/ingestion/normalize.py`, verified against golden fixtures
+- [x] Port the daily `Forecast HIGH` feature builder + write its test — `src/features/daily_features.py` (`forecast_high`, parameterized by station/source), verified against golden fixtures including the DST case
+- [x] Port the EOD actuals + pressure-feature computer + write its test — `src/features/actuals.py` (`eod_actuals_and_pressure`), verified against golden fixtures
+- [x] Add SQLAlchemy models for the 3 real tables (`src/db/models.py`) and upsert helpers reproducing the exact real `ON CONFLICT` SQL (`src/db/upsert.py`) — one function per table, called identically regardless of station, which is the actual fix for the §0b bug. Compile-time SQL tests (`tests/test_upsert_sql.py`, 5 tests) verify the shape.
+- [x] Docker installed (`winget install Docker.DockerDesktop` + `wsl --install`, user completed the elevation/reboot/first-run steps that couldn't be automated), `docker-compose.yml` added (local Postgres 16, ephemeral tmpfs storage, port 5433 to avoid clashing with anything on 5432). `tests/conftest.py` creates the real schema via `Base.metadata.create_all()` and wraps each test in a rollback transaction for isolation; auto-skips if the container isn't running. `tests/test_upsert_integration.py` (4 tests) now proves the upserts actually execute correctly against a real Postgres, not just that the SQL is shaped correctly — including a direct regression test that reproduces the exact failure scenario from §0b (insert all 4 daily-high stations for one `target_date`, then rerun as if retrying) and proves all 4 rows survive with updated values, closing the loop on the confirmed production bug. 34/34 tests passing overall.
+- [x] Build `src/ingestion/nws_client.py` — thin `httpx`-based client for `api.weather.gov` (`fetch_gridpoint_forecast`, `fetch_latest_observation`, `fetch_day_observations`), with `tenacity` retry (3 attempts, exponential backoff, retries transport errors and 5xx only — not 4xx). **Deliberate deviation from strict 1:1 porting, flagged explicitly**: the real n8n HTTP GET nodes have no retry configured at all (only the `/predict` POST node does); adding retries here is a resilience improvement that only affects transient-failure handling, never the data values returned on success. `fetch_day_observations` reproduces the EOD flow's NY-calendar-day-bounds URL logic — this one uses n8n's Luxon-based date expressions in production, not hand-rolled JS `Date` math, so unlike `Forecast HIGH`'s `lead_hours` it's already DST-safe and didn't need a "faithful bug" port. `tests/test_nws_client.py` (8 tests): 4 live against the real NWS API — which double as end-to-end proof the client's raw output is actually compatible with the already-tested `normalize_nws_data`/`forecast_high`/`eod_actuals_and_pressure` functions — plus 4 mocked tests for URL-building (including a DST-crossing case) and retry/no-retry behavior. 42/42 tests passing overall.
+- [x] Port `Return Observations` (the 15-min latest-observations merge/transform for 5 stations) — `return_observations()` added to `src/ingestion/normalize.py`, verified against a new golden fixture (`return_observations_normal`, covering missing-pressure/missing-wind/missing-dewpoint cases) and a live test that pulls all 5 real stations via `nws_client.fetch_latest_observation` and feeds them straight through. All 4 hourly/daily/EOD/observations n8n Code nodes are now ported and tested. 44/44 tests passing overall.
+- [x] Build `jobs/*.py` wiring the ported pieces together: `latest_observations_job.py`, `hourly_forecast_job.py`, `daily_high_forecast_job.py`, `actual_high_update_job.py`, `corrected_high_update_job.py` (Kalshi-side `daily_prediction_job.py` deliberately not built yet — it's genuinely new functionality needing the Phase 2 model, not a port). `daily_high_forecast_job.py` is the actual deployed fix for the confirmed §0b bug: it calls the same `upsert_daily_high_prediction()` for all 4 stations uniformly. Two real things caught while wiring, not while writing tests in isolation:
+  - **A real crash caught before it ever ran**: `forecast_high()`'s output includes its own `corrected_high_f: None` key, which collided with `upsert_daily_high_prediction()`'s own `corrected_high_f=None` and would have raised `TypeError: got multiple values for keyword argument` the first time the two were actually connected. No isolated test had exercised that exact combination. Fixed in `src/db/upsert.py` (strips the key from `values` first) with a regression test using `forecast_high()`'s real output directly, not a hand-trimmed dict.
+  - **A real test-isolation bug**: `tests/test_jobs.py` needed real commits (jobs call `session.commit()` internally as intended behavior, not incidentally), so it uses a new `plain_session` fixture instead of the rollback-wrapped `db_session`. That meant its writes started persisting across the whole shared local Postgres — which broke 3 previously-passing tests in `test_upsert_integration.py` that had queried "all rows in the table" instead of filtering to their own test data. Fixed by scoping those queries; documented in that file so it doesn't happen again as more job tests get added.
+  - `actual_high_update_job.py` and `corrected_high_update_job.py` faithfully preserve two real n8n quirks documented in §0/§0b: the EOD update's `WHERE` clause hardcodes `station = 'KNYC'` rather than using the JS's own dynamically-computed station value, and the corrected-high backfill has no per-station filter at all (same value applied to all 4 stations' rows for a date).
+  - 50/50 tests passing overall.
+- [x] **Direct Postgres write access to production finally works.** After several rejected passwords across multiple sessions, a fresh reset succeeded (`SELECT current_user, now()` connected cleanly via `psycopg2` through the `aws-1-us-east-2.pooler.supabase.com:6543` pooler). Real credential in `.env`, gitignored, not reproduced here.
+- [x] `job_runs` created for real in production (`CREATE TABLE IF NOT EXISTS`, same shape as the SQL above) — confirmed via `information_schema.tables`.
+- [x] **Shadow-mode proof of concept, run once for real.** `weather_observations_v2` created in production via `CREATE TABLE ... (LIKE weather_observations INCLUDING ALL)` (clones columns/constraints exactly, no hand-written DDL to drift from reality). `jobs/shadow_latest_observations_job.py` (temporary, not meant to survive past validation) ran for real against live NWS data and wrote 5 rows to the staging table. Compared against n8n's real, currently-running output: `KNYC` matched an existing n8n row at the exact same `observed_time` byte-for-bit (68.0°F, 1016.3 hPa, `wind_u=0.0`). The other 4 stations showed no row at that exact timestamp in the real table, but checking recency (`max(observed_time)` per station in `weather_observations`) showed this is healthy timing asynchrony, not a gap: n8n's most recent `KLGA`/`KJFK` reading was `05:25`, this job's was `05:35` — NWS published a fresher observation in the ~10 minutes between n8n's last 15-min tick and this one-off run; same pattern for `KEWR`/`KTEB` (`05:30` → `05:40`). A genuine apples-to-apples comparison needs the shadow job running on n8n's actual cadence, not a single manual run — that's what deploying to Render Cron Jobs (next) is for.
+- [x] All 3 staging tables now exist in production (`weather_observations_v2`, `weather_predictions_v2`, `weather_daily_high_predictions_v2`, each via `CREATE TABLE ... LIKE ... INCLUDING ALL` — exact clones, constraints included). All 5 `jobs/shadow_*.py` scripts written (raw-SQL upserts targeting `_v2` tables, deliberately not sharing `src/db/upsert.py`'s API so shadow-mode concerns stay out of the real job code) and **each run once for real against live production**, in dependency order:
+  - `shadow_daily_high_forecast_job` — wrote 4 real rows, one per station, proving the actual fix for the confirmed §0b bug works live.
+  - `shadow_hourly_forecast_job` — wrote 24 real rows, including 24 real round-trips to the live `/predict` API.
+  - `shadow_corrected_high_update_job` — backfilled `corrected_high_f = 72.8` identically across all 4 stations for `2026-08-26`, faithfully reproducing the no-per-station-filter quirk.
+  - `shadow_actual_high_update_job` — correctly no-op'd for `2026-08-25` (no matching row exists yet; that gets created once a full day/night cycle of shadow mode has run) — confirms the job handles the "no row yet" case the same way production would.
+  - `shadow_latest_observations_job` — see the dedicated finding above (KNYC matched n8n's real output byte-for-bit at a shared timestamp).
+- [x] `render.yaml` written — 5 shadow cron jobs (not the existing web service, deliberately, to avoid Blueprint sync risk to something already configured manually), schedules matching n8n's real triggers. **Known unresolved gap, flagged in the file itself**: Render Cron Jobs schedules are UTC-only with no IANA timezone option, unlike n8n's DST-aware `America/New_York` workflow setting — the committed schedules match the current EDT offset and will fire 1 hour off from the intended ET time once NY switches to EST, until manually adjusted or properly fixed. Not a blocker for shadow-mode validation starting now, but must be resolved before real cutover.
+- [ ] **Nothing has been committed or pushed yet** — this is the next real decision point. Deploying to Render requires a git push to the real GitHub remote.
+- [ ] Once deployed and shadow mode has accumulated real multi-day data: build a proper diff-comparison script (today's checks were ad hoc one-off queries) and formally validate before cutting over any n8n trigger, per §4 Step 5's 7–14 day rule
+- [ ] Fix the Render cron DST gap noted above before any real (non-shadow) cutover
+- [ ] Set up staging tables + shadow-mode comparison job
+- [ ] Once shadow mode matches for ~10 days: cut over job-by-job per §4 Step 5, retire n8n
+- [ ] Before building `daily_prediction_job.py`: resolve §4a — confirm what `PRESSURE_BIAS_F` was actually trained on, decide whether to gate `pressure_change_hpa` off until a forecast-specific bias term exists
+- [ ] Pull full `weather_daily_high_predictions` error history into a notebook — this is where Phase 2 actually starts

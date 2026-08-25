@@ -1,0 +1,45 @@
+{
+  "fixed_now": "2026-06-16T16:05:00+00:00",
+  "output": [
+    {
+      "json": {
+        "forecast_time": "2026-06-16T15:00:00+00:00",
+        "forecast_created_at": "2026-06-16T16:05:00.000Z",
+        "forecast_temperature_c": 20,
+        "corrected_temperature_c": 21.35,
+        "forecast_temperature_f": 68,
+        "corrected_temperature_f": 70.4,
+        "predicted_error_c": null,
+        "predicted_error_f": null,
+        "dewpoint_c": 14,
+        "dewpoint_f": 57.2,
+        "humidity_pct": 60,
+        "wind_speed": 12,
+        "wind_direction": 200,
+        "sky_cover_pct": 15,
+        "precip_probability_pct": 10,
+        "source": "NWS"
+      }
+    },
+    {
+      "json": {
+        "forecast_time": "2026-06-16T16:00:00+00:00",
+        "forecast_created_at": "2026-06-16T16:05:00.000Z",
+        "forecast_temperature_c": 21,
+        "corrected_temperature_c": 22,
+        "forecast_temperature_f": 69.8,
+        "corrected_temperature_f": 71.6,
+        "predicted_error_c": null,
+        "predicted_error_f": null,
+        "dewpoint_c": null,
+        "dewpoint_f": null,
+        "humidity_pct": null,
+        "wind_speed": null,
+        "wind_direction": null,
+        "sky_cover_pct": null,
+        "precip_probability_pct": null,
+        "source": "NWS"
+      }
+    }
+  ]
+}

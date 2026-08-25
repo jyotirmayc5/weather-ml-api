@@ -1,0 +1,509 @@
+{
+  "fixed_now": "2026-06-16T15:02:00+00:00",
+  "output": [
+    {
+      "json": {
+        "timestamp": "2026-06-16T16:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 15,
+        "dewpoint_c": 10,
+        "humidity_pct": 59,
+        "feels_like_c": 15,
+        "wind_speed": 14,
+        "wind_direction": 60,
+        "precip_probability_pct": 12,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 28
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-16T17:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 15,
+        "dewpoint_c": 0,
+        "humidity_pct": 50,
+        "feels_like_c": 15,
+        "wind_speed": 5,
+        "wind_direction": 180,
+        "precip_probability_pct": 0,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 50
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-16T18:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 15,
+        "dewpoint_c": 10,
+        "humidity_pct": 61,
+        "feels_like_c": 15,
+        "wind_speed": 11,
+        "wind_direction": 90,
+        "precip_probability_pct": 18,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 42
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-16T19:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 15,
+        "dewpoint_c": 10,
+        "humidity_pct": 62,
+        "feels_like_c": 15,
+        "wind_speed": 12,
+        "wind_direction": 105,
+        "precip_probability_pct": 21,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 49
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-16T20:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 16,
+        "dewpoint_c": 11,
+        "humidity_pct": 63,
+        "feels_like_c": 16,
+        "wind_speed": 13,
+        "wind_direction": 120,
+        "precip_probability_pct": 24,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 56
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-16T21:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 17,
+        "dewpoint_c": 12,
+        "humidity_pct": 64,
+        "feels_like_c": 17,
+        "wind_speed": 14,
+        "wind_direction": 135,
+        "precip_probability_pct": 27,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 63
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-16T22:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 18,
+        "dewpoint_c": 13,
+        "humidity_pct": 55,
+        "feels_like_c": 18,
+        "wind_speed": 10,
+        "wind_direction": 150,
+        "precip_probability_pct": 30,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 70
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-16T23:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 19,
+        "dewpoint_c": 14,
+        "humidity_pct": 56,
+        "feels_like_c": 19,
+        "wind_speed": 11,
+        "wind_direction": 165,
+        "precip_probability_pct": 33,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 77
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-17T00:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 20,
+        "dewpoint_c": 15,
+        "humidity_pct": 57,
+        "feels_like_c": 20,
+        "wind_speed": 12,
+        "wind_direction": 180,
+        "precip_probability_pct": 36,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 84
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-17T01:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 21,
+        "dewpoint_c": 16,
+        "humidity_pct": 58,
+        "feels_like_c": 21,
+        "wind_speed": 13,
+        "wind_direction": 195,
+        "precip_probability_pct": 39,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 91
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-17T02:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 22,
+        "dewpoint_c": 17,
+        "humidity_pct": 59,
+        "feels_like_c": 22,
+        "wind_speed": 14,
+        "wind_direction": 210,
+        "precip_probability_pct": 2,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 98
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-17T03:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 23,
+        "dewpoint_c": 18,
+        "humidity_pct": 60,
+        "feels_like_c": 23,
+        "wind_speed": 10,
+        "wind_direction": 225,
+        "precip_probability_pct": 5,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 5
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-17T04:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 22,
+        "dewpoint_c": 17,
+        "humidity_pct": 61,
+        "feels_like_c": 22,
+        "wind_speed": 11,
+        "wind_direction": 240,
+        "precip_probability_pct": 8,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 12
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-17T05:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 21,
+        "dewpoint_c": 16,
+        "humidity_pct": 62,
+        "feels_like_c": 21,
+        "wind_speed": 12,
+        "wind_direction": 255,
+        "precip_probability_pct": 11,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 19
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-17T06:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 20,
+        "dewpoint_c": 15,
+        "humidity_pct": 63,
+        "feels_like_c": 20,
+        "wind_speed": 13,
+        "wind_direction": 270,
+        "precip_probability_pct": 14,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 26
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-17T07:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 19,
+        "dewpoint_c": 14,
+        "humidity_pct": 64,
+        "feels_like_c": 19,
+        "wind_speed": 14,
+        "wind_direction": 285,
+        "precip_probability_pct": 17,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 33
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-17T08:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 18,
+        "dewpoint_c": 0,
+        "humidity_pct": 50,
+        "feels_like_c": 18,
+        "wind_speed": 5,
+        "wind_direction": 180,
+        "precip_probability_pct": 0,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 50
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-17T09:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 17,
+        "dewpoint_c": 12,
+        "humidity_pct": 56,
+        "feels_like_c": 17,
+        "wind_speed": 11,
+        "wind_direction": 315,
+        "precip_probability_pct": 23,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 47
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-17T10:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 16,
+        "dewpoint_c": 11,
+        "humidity_pct": 57,
+        "feels_like_c": 16,
+        "wind_speed": 12,
+        "wind_direction": 330,
+        "precip_probability_pct": 26,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 54
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-17T11:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 15,
+        "dewpoint_c": 10,
+        "humidity_pct": 58,
+        "feels_like_c": 15,
+        "wind_speed": 13,
+        "wind_direction": 345,
+        "precip_probability_pct": 29,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 61
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-17T12:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 15,
+        "dewpoint_c": 10,
+        "humidity_pct": 59,
+        "feels_like_c": 15,
+        "wind_speed": 14,
+        "wind_direction": 0,
+        "precip_probability_pct": 32,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 68
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-17T13:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 15,
+        "dewpoint_c": 10,
+        "humidity_pct": 60,
+        "feels_like_c": 15,
+        "wind_speed": 10,
+        "wind_direction": 15,
+        "precip_probability_pct": 35,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 75
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-17T14:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 15,
+        "dewpoint_c": 10,
+        "humidity_pct": 61,
+        "feels_like_c": 15,
+        "wind_speed": 11,
+        "wind_direction": 30,
+        "precip_probability_pct": 38,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 82
+      }
+    },
+    {
+      "json": {
+        "timestamp": "2026-06-17T15:00:00.000Z",
+        "forecast_created_at": "2026-06-16T15:02:00.000Z",
+        "office": "OKX",
+        "gridX": 33,
+        "gridY": 37,
+        "source": "NWS",
+        "temperature_c": 15,
+        "dewpoint_c": 10,
+        "humidity_pct": 62,
+        "feels_like_c": 15,
+        "wind_speed": 12,
+        "wind_direction": 45,
+        "precip_probability_pct": 1,
+        "precip_mm": 0,
+        "snowfall_mm": 0,
+        "ice_mm": 0,
+        "sky_cover_pct": 89
+      }
+    }
+  ]
+}

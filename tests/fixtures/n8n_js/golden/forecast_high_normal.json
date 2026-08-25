@@ -1,0 +1,28 @@
+{
+  "fixed_now": "2026-06-16T13:45:00+00:00",
+  "output": [
+    {
+      "json": {
+        "prediction_created_at": "2026-06-16T13:45:00.000Z",
+        "target_date": "2026-06-17",
+        "station": "KNYC",
+        "forecast_high_f": 73.4,
+        "forecast_low_f": 59,
+        "corrected_high_f": null,
+        "avg_humidity_pct": 59.7,
+        "avg_dewpoint_f": 54.8,
+        "avg_sky_cover_pct": 48.5,
+        "max_precip_probability_pct": 38,
+        "peak_heating_cloud_pct": 66,
+        "peak_heating_temp_f": 73.4,
+        "avg_wind_speed": 12,
+        "avg_wind_sin": 0,
+        "avg_wind_cos": 0,
+        "lead_hours": 30.2,
+        "month": 6,
+        "day_of_year": 167,
+        "source": "NWS OKX/33,37"
+      }
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+# Deliberately does NOT include the existing `weather-ml-api` web service --
+# that was created manually in the Render dashboard, not via Blueprint, and
+# including it here risks Render's Blueprint sync altering its existing
+# config on connect. Only the new shadow-mode cron jobs are defined below.
+#
+# KNOWN GAP, not yet resolved: Render Cron Jobs schedules run in UTC with no
+# IANA-timezone option (unlike n8n, whose workflow-level timezone setting
+# made "0 45 9 * * *" genuinely mean 9:45am America/New_York year-round). The
+# UTC times below match the *current* EDT offset (UTC-4, as of Aug 2026) --
+# they will fire one hour off from the intended ET time for the ~4 months a
+# year NY is on EST instead, until manually adjusted twice yearly (or this
+# gets a proper fix, e.g. a wrapper that checks the real NY time and no-ops
+# outside the intended window). Not a blocker for shadow-mode validation
+# happening now in EDT season, but must be fixed before real cutover.
+#
+# These are shadow-mode only: they write to the _v2 staging tables, not
+# production. Once WEATHER_KALSHI_TECHNICAL_PLAN.md's shadow-mode validation
+# passes, swap startCommand to the real (non-shadow) job module and delete
+# the shadow_*.py files + _v2 tables -- don't leave both running forever.
+
+services:
+  - type: cron
+    name: shadow-latest-observations
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m jobs.shadow_latest_observations_job
+    schedule: "*/15 * * * *"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+
+  - type: cron
+    name: shadow-hourly-forecast
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m jobs.shadow_hourly_forecast_job
+    schedule: "2 * * * *"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: PREDICT_API_URL
+        value: https://weather-ml-api-uv0s.onrender.com
+
+  - type: cron
+    name: shadow-daily-high-forecast
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m jobs.shadow_daily_high_forecast_job
+    schedule: "45 13 * * *" # 9:45am EDT -- see DST note above
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+
+  - type: cron
+    name: shadow-corrected-high-update
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m jobs.shadow_corrected_high_update_job
+    schedule: "50 13 * * *" # ~5 min after daily-high, approximating n8n's same-execution chain
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+
+  - type: cron
+    name: shadow-actual-high-update
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m jobs.shadow_actual_high_update_job
+    schedule: "55 3 * * *" # 11:55pm EDT (previous day) -- see DST note above
+    envVars:
+      - key: DATABASE_URL
+        sync: false

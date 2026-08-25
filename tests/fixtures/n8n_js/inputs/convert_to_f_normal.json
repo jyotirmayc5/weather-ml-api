@@ -1,0 +1,28 @@
+[
+  {
+    "timestamp": "2026-06-16T15:00:00+00:00",
+    "forecast_temperature_c": 20.0,
+    "corrected_temperature_c": 21.35,
+    "bias_c": 1.35,
+    "bias_f": 2.43,
+    "dewpoint_c": 14.0,
+    "humidity_pct": 60,
+    "wind_speed": 12,
+    "wind_direction": 200,
+    "precip_probability_pct": 10,
+    "sky_cover_pct": 15
+  },
+  {
+    "timestamp": "2026-06-16T16:00:00+00:00",
+    "forecast_temperature_c": 21.0,
+    "corrected_temperature_c": 22.0,
+    "bias_c": 1.0,
+    "bias_f": 1.8,
+    "dewpoint_c": null,
+    "humidity_pct": null,
+    "wind_speed": null,
+    "wind_direction": null,
+    "precip_probability_pct": null,
+    "sky_cover_pct": null
+  }
+]

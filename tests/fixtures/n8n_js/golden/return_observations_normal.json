@@ -1,0 +1,90 @@
+{
+  "fixed_now": "2026-06-16T15:52:00+00:00",
+  "output": [
+    {
+      "json": {
+        "observed_time": "2026-06-16T15:51:00+00:00",
+        "station": "KNYC",
+        "actual_temperature_f": 64.4,
+        "actual_dewpoint_f": 53.6,
+        "actual_humidity_pct": 60,
+        "actual_pressure_pa": 101500,
+        "actual_pressure_hpa": 1015,
+        "actual_wind_speed": 8,
+        "actual_wind_direction": 200,
+        "wind_u": -2.74,
+        "wind_v": -7.52,
+        "visibility_m": 16000,
+        "text_description": "Partly Cloudy"
+      }
+    },
+    {
+      "json": {
+        "observed_time": "2026-06-16T15:51:00+00:00",
+        "station": "KLGA",
+        "actual_temperature_f": 64.4,
+        "actual_dewpoint_f": 53.6,
+        "actual_humidity_pct": 60,
+        "actual_pressure_pa": null,
+        "actual_pressure_hpa": null,
+        "actual_wind_speed": 8,
+        "actual_wind_direction": 200,
+        "wind_u": -2.74,
+        "wind_v": -7.52,
+        "visibility_m": 16000,
+        "text_description": "Partly Cloudy"
+      }
+    },
+    {
+      "json": {
+        "observed_time": "2026-06-16T15:51:00+00:00",
+        "station": "KJFK",
+        "actual_temperature_f": 64.4,
+        "actual_dewpoint_f": 53.6,
+        "actual_humidity_pct": 60,
+        "actual_pressure_pa": 101500,
+        "actual_pressure_hpa": 1015,
+        "actual_wind_speed": null,
+        "actual_wind_direction": null,
+        "wind_u": null,
+        "wind_v": null,
+        "visibility_m": 16000,
+        "text_description": "Partly Cloudy"
+      }
+    },
+    {
+      "json": {
+        "observed_time": "2026-06-16T15:51:00+00:00",
+        "station": "KEWR",
+        "actual_temperature_f": 64.4,
+        "actual_dewpoint_f": 53.6,
+        "actual_humidity_pct": 60,
+        "actual_pressure_pa": 101500,
+        "actual_pressure_hpa": 1015,
+        "actual_wind_speed": 8,
+        "actual_wind_direction": 200,
+        "wind_u": -2.74,
+        "wind_v": -7.52,
+        "visibility_m": 16000,
+        "text_description": "Partly Cloudy"
+      }
+    },
+    {
+      "json": {
+        "observed_time": "2026-06-16T15:51:00+00:00",
+        "station": "KTEB",
+        "actual_temperature_f": 64.4,
+        "actual_dewpoint_f": null,
+        "actual_humidity_pct": 60,
+        "actual_pressure_pa": 101500,
+        "actual_pressure_hpa": 1015,
+        "actual_wind_speed": 8,
+        "actual_wind_direction": 200,
+        "wind_u": -2.74,
+        "wind_v": -7.52,
+        "visibility_m": 16000,
+        "text_description": "Partly Cloudy"
+      }
+    }
+  ]
+}

@@ -1,0 +1,142 @@
+[
+  {
+    "properties": {
+      "station": "https://api.weather.gov/stations/KNYC",
+      "timestamp": "2026-06-16T15:51:00+00:00",
+      "temperature": {
+        "value": 18.0
+      },
+      "dewpoint": {
+        "value": 12.0
+      },
+      "relativeHumidity": {
+        "value": 60
+      },
+      "barometricPressure": {
+        "value": 101500
+      },
+      "windSpeed": {
+        "value": 8.0
+      },
+      "windDirection": {
+        "value": 200
+      },
+      "visibility": {
+        "value": 16000
+      },
+      "textDescription": "Partly Cloudy"
+    }
+  },
+  {
+    "properties": {
+      "station": "https://api.weather.gov/stations/KLGA",
+      "timestamp": "2026-06-16T15:51:00+00:00",
+      "temperature": {
+        "value": 18.0
+      },
+      "dewpoint": {
+        "value": 12.0
+      },
+      "relativeHumidity": {
+        "value": 60
+      },
+      "barometricPressure": {
+        "value": null
+      },
+      "windSpeed": {
+        "value": 8.0
+      },
+      "windDirection": {
+        "value": 200
+      },
+      "visibility": {
+        "value": 16000
+      },
+      "textDescription": "Partly Cloudy"
+    }
+  },
+  {
+    "properties": {
+      "station": "https://api.weather.gov/stations/KJFK",
+      "timestamp": "2026-06-16T15:51:00+00:00",
+      "temperature": {
+        "value": 18.0
+      },
+      "dewpoint": {
+        "value": 12.0
+      },
+      "relativeHumidity": {
+        "value": 60
+      },
+      "barometricPressure": {
+        "value": 101500
+      },
+      "windSpeed": {
+        "value": null
+      },
+      "windDirection": {
+        "value": null
+      },
+      "visibility": {
+        "value": 16000
+      },
+      "textDescription": "Partly Cloudy"
+    }
+  },
+  {
+    "properties": {
+      "station": "https://api.weather.gov/stations/KEWR",
+      "timestamp": "2026-06-16T15:51:00+00:00",
+      "temperature": {
+        "value": 18.0
+      },
+      "dewpoint": {
+        "value": 12.0
+      },
+      "relativeHumidity": {
+        "value": 60
+      },
+      "barometricPressure": {
+        "value": 101500
+      },
+      "windSpeed": {
+        "value": 8.0
+      },
+      "windDirection": {
+        "value": 200
+      },
+      "visibility": {
+        "value": 16000
+      },
+      "textDescription": "Partly Cloudy"
+    }
+  },
+  {
+    "properties": {
+      "station": "https://api.weather.gov/stations/KTEB",
+      "timestamp": "2026-06-16T15:51:00+00:00",
+      "temperature": {
+        "value": 18.0
+      },
+      "dewpoint": {
+        "value": null
+      },
+      "relativeHumidity": {
+        "value": 60
+      },
+      "barometricPressure": {
+        "value": 101500
+      },
+      "windSpeed": {
+        "value": 8.0
+      },
+      "windDirection": {
+        "value": 200
+      },
+      "visibility": {
+        "value": 16000
+      },
+      "textDescription": "Partly Cloudy"
+    }
+  }
+]

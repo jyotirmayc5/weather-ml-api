@@ -78,3 +78,18 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
+
+  # Not shadow-mode -- writes to the real kalshi_settlements table directly
+  # (nothing in n8n conflicts with this, it's new functionality, not a
+  # migrated flow). No DST guard needed either: this isn't tied to a specific
+  # NY clock moment, just "check periodically for newly-settled markets."
+  - type: cron
+    name: kalshi-settlement-pull
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m jobs.kalshi_settlement_job
+    schedule: "0 15 * * *"
+    envVars:
+      - key: DATABASE_URL
+        sync: false

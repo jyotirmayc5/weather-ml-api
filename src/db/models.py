@@ -102,6 +102,25 @@ class WeatherDailyHighPrediction(Base):
     pressure_6pm_hpa: Mapped[Optional[float]] = mapped_column(Numeric)
 
 
+class KalshiSettlement(Base):
+    """New table, doesn't exist by default -- see
+    WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 5b for why this exists: our own
+    actual_high_f is systematically ~0.64F off from what Kalshi actually
+    settles on, so future model training/backtesting needs Kalshi's real
+    settlement value as ground truth, not just weather_daily_high_predictions'
+    own actual_high_f."""
+
+    __tablename__ = "kalshi_settlements"
+    __table_args__ = (UniqueConstraint("event_ticker", name="kalshi_settlements_event_ticker_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    series_ticker: Mapped[str] = mapped_column(String)
+    event_ticker: Mapped[str] = mapped_column(String)
+    target_date: Mapped[date] = mapped_column(Date)
+    settled_value_f: Mapped[float] = mapped_column(Numeric)
+    pulled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class JobRun(Base):
     """New table, doesn't exist in the real Supabase project yet -- see
     WEATHER_KALSHI_TECHNICAL_PLAN.md checklist for the CREATE TABLE to run

@@ -7,7 +7,12 @@ station) at all, unlike the KNYC node. There's no "per-station" special case
 here, deliberately."""
 from sqlalchemy.dialects.postgresql import insert
 
-from src.db.models import WeatherDailyHighPrediction, WeatherObservation, WeatherPrediction
+from src.db.models import (
+    KalshiSettlement,
+    WeatherDailyHighPrediction,
+    WeatherObservation,
+    WeatherPrediction,
+)
 
 
 def upsert_weather_observation(values: dict):
@@ -82,3 +87,11 @@ def upsert_daily_high_prediction(values: dict):
         index_elements=["target_date", "station"],
         set_={col: getattr(stmt.excluded, col) for col in update_columns},
     )
+
+
+def upsert_kalshi_settlement(values: dict):
+    """Insert-or-ignore on event_ticker -- a settled event's value never
+    changes once finalized, so there's nothing to update on conflict, only
+    something to skip re-inserting."""
+    stmt = insert(KalshiSettlement).values(**values)
+    return stmt.on_conflict_do_nothing(index_elements=["event_ticker"])

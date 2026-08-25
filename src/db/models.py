@@ -121,6 +121,29 @@ class KalshiSettlement(Base):
     pulled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class OpenMeteoHistoricalDaily(Base):
+    """New table -- see WEATHER_KALSHI_TECHNICAL_PLAN.md: backfills daily
+    forecast-vs-actual pairs for seasons before our own NWS-based collection
+    started (2026-05-25), from Open-Meteo's Historical Forecast API
+    (src/ingestion/open_meteo_client.py). Deliberately kept in its own table,
+    not merged into weather_daily_high_predictions -- different underlying
+    model (GFS via Open-Meteo, not NWS's official blended forecast), so
+    mixing them silently would conflate two methodologically distinct
+    sources."""
+
+    __tablename__ = "open_meteo_historical_daily"
+    __table_args__ = (
+        UniqueConstraint("target_date", "model", name="open_meteo_historical_daily_target_date_model_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    target_date: Mapped[date] = mapped_column(Date)
+    model: Mapped[str] = mapped_column(String)
+    forecast_high_f: Mapped[Optional[float]] = mapped_column(Numeric)
+    actual_high_f: Mapped[Optional[float]] = mapped_column(Numeric)
+    pulled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class JobRun(Base):
     """New table, doesn't exist in the real Supabase project yet -- see
     WEATHER_KALSHI_TECHNICAL_PLAN.md checklist for the CREATE TABLE to run

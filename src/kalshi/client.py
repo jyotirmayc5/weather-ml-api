@@ -41,11 +41,22 @@ _retry = retry(
 
 
 @_retry
-def _get(path: str, params: dict | None = None) -> dict:
-    with httpx.Client(base_url=BASE_URL, timeout=30) as client:
+def _get(path: str, params: dict | None = None, client: httpx.Client | None = None) -> dict:
+    if client is not None:
         resp = client.get(path, params=params)
         resp.raise_for_status()
         return resp.json()
+    with httpx.Client(base_url=BASE_URL, timeout=30) as owned_client:
+        resp = owned_client.get(path, params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+
+def new_client() -> httpx.Client:
+    """For callers making many requests (e.g. a historical backfill) --
+    reuse one connection instead of opening a new one per call, which is
+    what every function below does by default when no client is passed."""
+    return httpx.Client(base_url=BASE_URL, timeout=30)
 
 
 def event_ticker_to_date(event_ticker: str) -> date:
@@ -60,7 +71,9 @@ def event_ticker_to_date(event_ticker: str) -> date:
     return date(2000 + int(yy), _MONTHS[mon], int(dd))
 
 
-def fetch_settled_events(series_ticker: str, min_date: date | None = None) -> list[dict]:
+def fetch_settled_events(
+    series_ticker: str, min_date: date | None = None, client: httpx.Client | None = None
+) -> list[dict]:
     """Paginates through ALL settled events for a series (cursor-based),
     optionally stopping once events are older than min_date (events come back
     newest-first, so this can stop early rather than paginating the entire
@@ -71,7 +84,7 @@ def fetch_settled_events(series_ticker: str, min_date: date | None = None) -> li
         params = {"series_ticker": series_ticker, "status": "settled", "limit": 100}
         if cursor:
             params["cursor"] = cursor
-        page = _get("/events", params=params)
+        page = _get("/events", params=params, client=client)
         page_events = page.get("events", [])
         if not page_events:
             break
@@ -89,13 +102,36 @@ def fetch_settled_events(series_ticker: str, min_date: date | None = None) -> li
     return events
 
 
-def get_settlement_value(event_ticker: str) -> float | None:
-    """The actual settled temperature for a daily-high/low event, taken from
-    the first market's expiration_value (all bucket markets within one event
-    share the same expiration_value -- only the strike differs)."""
-    data = _get(f"/events/{event_ticker}", params={"with_nested_markets": "true"})
+def _first_nonempty_expiration_value(markets: list[dict]) -> float | None:
+    """In LIVE-tier events, every bucket market shares the same
+    expiration_value. In HISTORICAL-tier events (older than Kalshi's rolling
+    live/historical cutoff, GET /historical/cutoff), only the market that
+    actually resolved "yes" has a populated expiration_value -- the rest are
+    empty strings. Scanning all markets for the first non-empty value handles
+    both cases correctly; checking only markets[0] (the original
+    implementation) silently returned None for the vast majority of
+    historical-tier events -- caught when a full-history backfill only
+    filled 67 of 1841 known settled events."""
+    for market in markets:
+        value = market.get("expiration_value")
+        if value:
+            return float(value)
+    return None
+
+
+def get_settlement_value(event_ticker: str, client: httpx.Client | None = None) -> float | None:
+    """The actual settled temperature for a daily-high/low event. Tries the
+    live-tier endpoint first (/events/{ticker}?with_nested_markets=true,
+    works for recent events); if that returns no markets at all (the event
+    has rolled into Kalshi's historical tier), falls back to
+    /historical/markets?event_ticker={ticker}, which returns market data for
+    old events that the live endpoints no longer expose at all."""
+    data = _get(f"/events/{event_ticker}", params={"with_nested_markets": "true"}, client=client)
     markets = data.get("event", {}).get("markets", [])
-    if not markets:
-        return None
-    value = markets[0].get("expiration_value")
-    return float(value) if value else None
+    if markets:
+        return _first_nonempty_expiration_value(markets)
+
+    historical = _get(
+        "/historical/markets", params={"event_ticker": event_ticker}, client=client
+    )
+    return _first_nonempty_expiration_value(historical.get("markets", []))

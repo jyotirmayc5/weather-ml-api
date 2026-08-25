@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from src.db.models import (
     KalshiSettlement,
+    OpenMeteoHistoricalDaily,
     WeatherDailyHighPrediction,
     WeatherObservation,
     WeatherPrediction,
@@ -95,3 +96,10 @@ def upsert_kalshi_settlement(values: dict):
     something to skip re-inserting."""
     stmt = insert(KalshiSettlement).values(**values)
     return stmt.on_conflict_do_nothing(index_elements=["event_ticker"])
+
+
+def upsert_open_meteo_historical_daily(values: dict):
+    """Insert-or-ignore on (target_date, model) -- historical backfill data
+    doesn't change once pulled."""
+    stmt = insert(OpenMeteoHistoricalDaily).values(**values)
+    return stmt.on_conflict_do_nothing(index_elements=["target_date", "model"])

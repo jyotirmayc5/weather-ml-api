@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from src.db.job_runs import track_job_run
 from src.db.session import get_session
+from src.scheduling import in_ny_time_window
 
 CORRECTED_HIGH_UPDATE_SQL = text(
     """
@@ -34,6 +35,11 @@ CORRECTED_HIGH_UPDATE_SQL = text(
 
 
 def run():
+    # See src/scheduling.py -- render.yaml should fire this at both possible
+    # UTC times for ~9:50am ET (shortly after daily_high_forecast_job).
+    if not in_ny_time_window(9, 50):
+        return
+
     session = get_session()
     with track_job_run(session, "corrected_high_update_job"):
         session.execute(CORRECTED_HIGH_UPDATE_SQL)

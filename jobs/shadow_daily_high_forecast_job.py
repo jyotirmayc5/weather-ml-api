@@ -11,6 +11,7 @@ from src.db.job_runs import track_job_run
 from src.db.session import get_session
 from src.features.daily_features import forecast_high
 from src.ingestion.nws_client import fetch_gridpoint_forecast
+from src.scheduling import in_ny_time_window
 
 GRIDPOINTS = [
     ("OKX", 33, 37, "KNYC", "NWS OKX/33,37"),
@@ -56,6 +57,12 @@ UPSERT_SQL = text(
 
 
 def run():
+    # render.yaml fires this job at both possible UTC times for 9:45am ET
+    # (DST-proofing -- see src/scheduling.py); skip the tick that doesn't
+    # actually correspond to 9:45am NY time right now.
+    if not in_ny_time_window(9, 45):
+        return []
+
     now = datetime.now(timezone.utc)
     session = get_session()
     with track_job_run(session, "daily_high_forecast_job_shadow"):

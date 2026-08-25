@@ -3,15 +3,18 @@
 # including it here risks Render's Blueprint sync altering its existing
 # config on connect. Only the new shadow-mode cron jobs are defined below.
 #
-# KNOWN GAP, not yet resolved: Render Cron Jobs schedules run in UTC with no
-# IANA-timezone option (unlike n8n, whose workflow-level timezone setting
-# made "0 45 9 * * *" genuinely mean 9:45am America/New_York year-round). The
-# UTC times below match the *current* EDT offset (UTC-4, as of Aug 2026) --
-# they will fire one hour off from the intended ET time for the ~4 months a
-# year NY is on EST instead, until manually adjusted twice yearly (or this
-# gets a proper fix, e.g. a wrapper that checks the real NY time and no-ops
-# outside the intended window). Not a blocker for shadow-mode validation
-# happening now in EDT season, but must be fixed before real cutover.
+# DST fix: Render Cron Jobs schedules run in UTC with no IANA-timezone option
+# (unlike n8n, whose workflow-level timezone setting made "0 45 9 * * *"
+# genuinely mean 9:45am America/New_York year-round). The 3 ET-clock-time jobs
+# below (daily-high-forecast, corrected-high-update, actual-high-update) are
+# scheduled at BOTH possible UTC times for their target ET time (comma-
+# separated hours, e.g. "45 13,14 * * *" for 9:45am ET), and each job checks
+# the real NY-local time itself (src/scheduling.py's in_ny_time_window) and
+# no-ops on whichever of the two daily ticks doesn't actually correspond to
+# the intended moment. No twice-yearly manual schedule updates needed. The
+# other two jobs (latest-observations, hourly-forecast) don't need this --
+# "every 15 min" / "every hour at :02" are inherently DST-agnostic cadences,
+# not tied to a specific ET clock time.
 #
 # These are shadow-mode only: they write to the _v2 staging tables, not
 # production. Once WEATHER_KALSHI_TECHNICAL_PLAN.md's shadow-mode validation
@@ -49,7 +52,7 @@ services:
     plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: python -m jobs.shadow_daily_high_forecast_job
-    schedule: "45 13 * * *" # 9:45am EDT -- see DST note above
+    schedule: "45 13,14 * * *" # fires at both possible UTC times for 9:45am ET -- see DST note above
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -60,7 +63,7 @@ services:
     plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: python -m jobs.shadow_corrected_high_update_job
-    schedule: "50 13 * * *" # ~5 min after daily-high, approximating n8n's same-execution chain
+    schedule: "50 13,14 * * *" # ~5 min after daily-high, both possible UTC times for 9:50am ET
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -71,7 +74,7 @@ services:
     plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: python -m jobs.shadow_actual_high_update_job
-    schedule: "55 3 * * *" # 11:55pm EDT (previous day) -- see DST note above
+    schedule: "55 3,4 * * *" # fires at both possible UTC times for 11:55pm ET -- see DST note above
     envVars:
       - key: DATABASE_URL
         sync: false

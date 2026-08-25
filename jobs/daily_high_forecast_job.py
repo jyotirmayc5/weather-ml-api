@@ -12,6 +12,7 @@ from src.db.session import get_session
 from src.db.upsert import upsert_daily_high_prediction
 from src.features.daily_features import forecast_high
 from src.ingestion.nws_client import fetch_gridpoint_forecast
+from src.scheduling import in_ny_time_window
 
 # (office, gridX, gridY, station, source) -- exact values from archive/n8n_export.json
 GRIDPOINTS = [
@@ -23,6 +24,11 @@ GRIDPOINTS = [
 
 
 def run():
+    # See src/scheduling.py -- render.yaml should fire this at both possible
+    # UTC times for 9:45am ET to stay correct across DST.
+    if not in_ny_time_window(9, 45):
+        return
+
     now = datetime.now(timezone.utc)
     session = get_session()
     with track_job_run(session, "daily_high_forecast_job"):

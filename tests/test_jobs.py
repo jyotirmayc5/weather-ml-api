@@ -125,6 +125,7 @@ def test_daily_high_forecast_job_writes_all_4_stations(plain_session):
 
     with (
         patch.object(daily_high_forecast_job, "get_session", lambda: plain_session),
+        patch.object(daily_high_forecast_job, "in_ny_time_window", lambda *a, **kw: True),
         patch.object(daily_high_forecast_job, "fetch_gridpoint_forecast", return_value=payload),
     ):
         daily_high_forecast_job.run()
@@ -141,6 +142,17 @@ def test_daily_high_forecast_job_writes_all_4_stations(plain_session):
         "GRID_36_33_MARINE",
         "GRID_31_39_INLAND",
     }
+
+
+def test_daily_high_forecast_job_skips_outside_the_scheduling_window(plain_session):
+    with (
+        patch.object(daily_high_forecast_job, "get_session", lambda: plain_session),
+        patch.object(daily_high_forecast_job, "in_ny_time_window", lambda *a, **kw: False),
+        patch.object(daily_high_forecast_job, "fetch_gridpoint_forecast") as fetch_mock,
+    ):
+        daily_high_forecast_job.run()
+
+    fetch_mock.assert_not_called()
 
 
 def test_actual_high_update_job_updates_existing_knyc_row(plain_session):
@@ -167,6 +179,7 @@ def test_actual_high_update_job_updates_existing_knyc_row(plain_session):
 
     with (
         patch.object(actual_high_update_job, "get_session", lambda: plain_session),
+        patch.object(actual_high_update_job, "in_ny_time_window", lambda *a, **kw: True),
         patch.object(actual_high_update_job, "fetch_day_observations", return_value=obs_payload),
     ):
         actual_high_update_job.run()
@@ -203,7 +216,10 @@ def test_corrected_high_update_job_backfills_from_max_hourly_corrected(plain_ses
     )
     plain_session.commit()
 
-    with patch.object(corrected_high_update_job, "get_session", lambda: plain_session):
+    with (
+        patch.object(corrected_high_update_job, "get_session", lambda: plain_session),
+        patch.object(corrected_high_update_job, "in_ny_time_window", lambda *a, **kw: True),
+    ):
         corrected_high_update_job.run()
 
     row = plain_session.scalars(

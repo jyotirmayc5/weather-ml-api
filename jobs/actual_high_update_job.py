@@ -19,9 +19,15 @@ from src.db.models import WeatherDailyHighPrediction
 from src.db.session import get_session
 from src.features.actuals import eod_actuals_and_pressure
 from src.ingestion.nws_client import fetch_day_observations
+from src.scheduling import in_ny_time_window
 
 
 def run():
+    # See src/scheduling.py -- render.yaml should fire this at both possible
+    # UTC times for 11:55pm ET to stay correct across DST.
+    if not in_ny_time_window(23, 55):
+        return
+
     now = datetime.now(timezone.utc)
     session = get_session()
     with track_job_run(session, "actual_high_update_job"):

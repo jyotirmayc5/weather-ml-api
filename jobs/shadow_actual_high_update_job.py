@@ -11,6 +11,7 @@ from src.db.job_runs import track_job_run
 from src.db.session import get_session
 from src.features.actuals import eod_actuals_and_pressure
 from src.ingestion.nws_client import fetch_day_observations
+from src.scheduling import in_ny_time_window
 
 UPDATE_SQL = text(
     """
@@ -32,6 +33,9 @@ UPDATE_SQL = text(
 
 
 def run():
+    if not in_ny_time_window(23, 55):
+        return None
+
     now = datetime.now(timezone.utc)
     session = get_session()
     with track_job_run(session, "actual_high_update_job_shadow"):

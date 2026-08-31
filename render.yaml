@@ -16,12 +16,37 @@
 # "every 15 min" / "every hour at :02" are inherently DST-agnostic cadences,
 # not tied to a specific ET clock time.
 #
-# These are shadow-mode only: they write to the _v2 staging tables, not
-# production. Once WEATHER_KALSHI_TECHNICAL_PLAN.md's shadow-mode validation
-# passes, swap startCommand to the real (non-shadow) job module and delete
-# the shadow_*.py files + _v2 tables -- don't leave both running forever.
+# Cutover status (WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 4 Step 5): jobs move
+# from their shadow_* variant (writing to _v2 staging tables) to the real
+# variant (writing to production tables) one at a time, in the plan's stated
+# order: latest-observations, daily-high-forecast, actual-high-update,
+# hourly-forecast, corrected-high-update. A shadow_* entry and its real
+# counterpart run in parallel only during that job's own cutover window --
+# once n8n's matching trigger is confirmed disabled and the real job
+# confirmed healthy, remove the shadow_* entry and its _v2 table. Don't leave
+# both running indefinitely once a job has cut over.
 
 services:
+  # REAL cutover has started (WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 4 Step 5):
+  # this writes to the real weather_observations table, not the _v2 staging
+  # one. Runs alongside shadow-latest-observations (below) until n8n's
+  # "Schedule actuals latest" trigger is confirmed disabled and this is
+  # confirmed as the sole healthy writer -- then remove the shadow entry.
+  # Remember: this is a NEW service via Auto Sync, so DATABASE_URL needs to
+  # be added manually on its Environment tab after it's created (Auto Sync
+  # has no interactive secret-entry step -- this exact gap caused the
+  # kalshi-settlement-pull outage earlier in this project).
+  - type: cron
+    name: latest-observations
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m jobs.latest_observations_job
+    schedule: "*/15 * * * *"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+
   - type: cron
     name: shadow-latest-observations
     runtime: python

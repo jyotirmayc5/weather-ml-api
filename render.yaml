@@ -81,17 +81,6 @@ services:
         value: https://weather-ml-api-uv0s.onrender.com
 
   - type: cron
-    name: shadow-daily-high-forecast
-    runtime: python
-    plan: starter
-    buildCommand: pip install -r requirements.txt
-    startCommand: python -m jobs.shadow_daily_high_forecast_job
-    schedule: "45 13,14 * * *" # fires at both possible UTC times for 9:45am ET -- see DST note above
-    envVars:
-      - key: DATABASE_URL
-        sync: false
-
-  - type: cron
     name: shadow-corrected-high-update
     runtime: python
     plan: starter

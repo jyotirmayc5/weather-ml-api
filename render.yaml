@@ -91,16 +91,26 @@ services:
       - key: DATABASE_URL
         sync: false
 
+  # REAL cutover, job #4 (WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 4 Step 5): wraps
+  # the already-live /predict endpoint, lowest risk of the 5 since the model
+  # itself doesn't change. Runs alongside shadow-hourly-forecast until n8n's
+  # "Schedule prediction engine" trigger is confirmed disabled and this is
+  # confirmed as the sole healthy writer -- then remove the shadow entry.
+  # New service via Auto Sync, so DATABASE_URL needs to be added manually on
+  # its Environment tab after it's created, then a Manual Deploy (not just
+  # "Trigger Run") to actually pick it up.
   - type: cron
-    name: shadow-actual-high-update
+    name: hourly-forecast
     runtime: python
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: python -m jobs.shadow_actual_high_update_job
-    schedule: "55 3,4 * * *" # fires at both possible UTC times for 11:55pm ET -- see DST note above
+    startCommand: python -m jobs.hourly_forecast_job
+    schedule: "2 * * * *"
     envVars:
       - key: DATABASE_URL
         sync: false
+      - key: PREDICT_API_URL
+        value: https://weather-ml-api-uv0s.onrender.com
 
   # REAL cutover, job #3 (WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 4 Step 5): writes
   # to the real weather_daily_high_predictions table (UPDATE, not insert --

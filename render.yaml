@@ -68,19 +68,6 @@ services:
         sync: false
 
   - type: cron
-    name: shadow-hourly-forecast
-    runtime: python
-    plan: starter
-    buildCommand: pip install -r requirements.txt
-    startCommand: python -m jobs.shadow_hourly_forecast_job
-    schedule: "2 * * * *"
-    envVars:
-      - key: DATABASE_URL
-        sync: false
-      - key: PREDICT_API_URL
-        value: https://weather-ml-api-uv0s.onrender.com
-
-  - type: cron
     name: shadow-corrected-high-update
     runtime: python
     plan: starter

@@ -67,12 +67,23 @@ services:
       - key: DATABASE_URL
         sync: false
 
+  # REAL cutover, last job in the primary migration (WEATHER_KALSHI_TECHNICAL_PLAN.md
+  # Sec 4 Step 5): backfills corrected_high_f for all 4 stations from the day's
+  # max corrected hourly temperature. Unlike the other jobs, its n8n counterpart
+  # ("Update corrected_high_f") isn't on its own trigger -- it's wired downstream
+  # of "NWS insert prediction high" in the same daily-high flow, so it already
+  # went dark when Schedule Predict Data (job #2's trigger) was disabled. No
+  # separate n8n trigger to find/disable here. Runs alongside
+  # shadow-corrected-high-update until this is confirmed healthy, then remove
+  # the shadow entry. New service via Auto Sync, so DATABASE_URL needs to be
+  # added manually on its Environment tab after it's created, then a Manual
+  # Deploy (not just "Trigger Run") to actually pick it up.
   - type: cron
-    name: shadow-corrected-high-update
+    name: corrected-high-update
     runtime: python
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: python -m jobs.shadow_corrected_high_update_job
+    startCommand: python -m jobs.corrected_high_update_job
     schedule: "50 13,14 * * *" # ~5 min after daily-high, both possible UTC times for 9:50am ET
     envVars:
       - key: DATABASE_URL

@@ -67,6 +67,26 @@ services:
       - key: DATABASE_URL
         sync: false
 
+  # NEW functionality, not an n8n port (WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 5
+  # Step 6): logs our model's probability for each real Kalshi KXHIGHNY
+  # bucket market alongside the market's own current price, into
+  # kalshi_predictions. Read-only logging for comparison -- NOT a trading
+  # signal, not wired to order placement. Runs ~3 min after daily-high-
+  # forecast so today's forecast_high_f row (written yesterday, for today's
+  # target_date) is guaranteed to already exist. New service via Auto Sync,
+  # so DATABASE_URL needs to be added manually on its Environment tab after
+  # it's created, then a Manual Deploy (not just "Trigger Run").
+  - type: cron
+    name: daily-prediction
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m jobs.daily_prediction_job
+    schedule: "48 13,14 * * *" # fires at both possible UTC times for 9:48am ET -- see DST note above
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+
   # REAL cutover, last job in the primary migration (WEATHER_KALSHI_TECHNICAL_PLAN.md
   # Sec 4 Step 5): backfills corrected_high_f for all 4 stations from the day's
   # max corrected hourly temperature. Unlike the other jobs, its n8n counterpart

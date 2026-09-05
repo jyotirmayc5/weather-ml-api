@@ -9,6 +9,7 @@ from sqlalchemy.dialects import postgresql
 
 from src.db.upsert import (
     upsert_daily_high_prediction,
+    upsert_kalshi_prediction,
     upsert_weather_observation,
     upsert_weather_prediction,
 )
@@ -98,6 +99,28 @@ def test_daily_high_upsert_accepts_forecast_high_output_directly():
     assert "corrected_high_f" in row  # sanity: this is what caused the collision
     stmt = upsert_daily_high_prediction(row)  # must not raise
     compiled(stmt)
+
+
+def test_kalshi_prediction_upsert_targets_target_date_and_market_ticker():
+    stmt = upsert_kalshi_prediction(
+        {
+            "target_date": "2026-09-05",
+            "market_ticker": "KXHIGHNY-26SEP05-B79.5",
+            "strike_type": "between",
+            "floor_strike": 79,
+            "cap_strike": 80,
+            "forecast_high_f": 78.0,
+            "residual_sample_size": 92,
+            "model_probability": 0.4,
+            "market_yes_bid": 0.60,
+            "market_yes_ask": 0.62,
+            "predicted_at": "2026-09-05T13:48:00Z",
+        }
+    )
+    sql = compiled(stmt)
+    assert "ON CONFLICT (target_date, market_ticker) DO UPDATE SET" in sql
+    assert "model_probability = excluded.model_probability" in sql
+    assert "market_yes_bid = excluded.market_yes_bid" in sql
 
 
 def test_daily_high_upsert_never_overwrites_actual_or_corrected_columns():

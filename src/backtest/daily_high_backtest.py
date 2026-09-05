@@ -78,6 +78,35 @@ def predicted_prob_ge(forecast_high_f: float, residuals: list[float], strike: fl
     return hits / len(residuals)
 
 
+def predicted_prob_bucket(
+    forecast_high_f: float,
+    residuals: list[float],
+    strike_type: str,
+    floor_strike: float | None,
+    cap_strike: float | None,
+) -> float:
+    """P(actual lands in a real Kalshi bucket market), built on
+    predicted_prob_ge. Kalshi's KXHIGHNY buckets are whole-degree and
+    non-overlapping (verified live against KXHIGHNY-26SEP05, see
+    WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 5): 'less' means actual < cap_strike,
+    'between' means floor_strike <= actual <= cap_strike (both inclusive,
+    confirmed via that event's own rules_primary text, e.g. "between 79-80"),
+    'greater' means actual > floor_strike. Treats the settlement value as an
+    effectively whole-degree reading for bucket-matching purposes, matching
+    how Kalshi's own rules are phrased -- this is a deliberate simplification
+    of the continuous residual model, not an attempt to model sub-degree
+    rounding behavior."""
+    if strike_type == "less":
+        return 1.0 - predicted_prob_ge(forecast_high_f, residuals, cap_strike)
+    if strike_type == "between":
+        return predicted_prob_ge(forecast_high_f, residuals, floor_strike) - predicted_prob_ge(
+            forecast_high_f, residuals, cap_strike + 1
+        )
+    if strike_type == "greater":
+        return predicted_prob_ge(forecast_high_f, residuals, floor_strike + 1)
+    raise ValueError(f"unrecognized strike_type {strike_type!r}")
+
+
 def brier_score(pairs: list[tuple[float, int]]) -> float:
     """Mean squared error between predicted probability and the 0/1 realized
     outcome. Lower is better; 0 is perfect, 0.25 is what an uninformative

@@ -144,6 +144,34 @@ class OpenMeteoHistoricalDaily(Base):
     pulled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class KalshiPrediction(Base):
+    """New table -- WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 5 Step 6: logs our
+    model's probability estimate for each real Kalshi KXHIGHNY bucket market
+    alongside the market's own current yes_bid/yes_ask, for at least a few
+    weeks before any live/paper trading decision is made. Written daily by
+    jobs/daily_prediction_job.py, one row per bucket market (5-6 per day).
+    Deliberately NOT a trading table -- no order/position fields, read-only
+    market data only."""
+
+    __tablename__ = "kalshi_predictions"
+    __table_args__ = (
+        UniqueConstraint("target_date", "market_ticker", name="kalshi_predictions_target_date_ticker_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    target_date: Mapped[date] = mapped_column(Date)
+    market_ticker: Mapped[str] = mapped_column(String)
+    strike_type: Mapped[str] = mapped_column(String)
+    floor_strike: Mapped[Optional[float]] = mapped_column(Numeric)
+    cap_strike: Mapped[Optional[float]] = mapped_column(Numeric)
+    forecast_high_f: Mapped[float] = mapped_column(Numeric)
+    residual_sample_size: Mapped[int] = mapped_column()
+    model_probability: Mapped[float] = mapped_column(Numeric)
+    market_yes_bid: Mapped[Optional[float]] = mapped_column(Numeric)
+    market_yes_ask: Mapped[Optional[float]] = mapped_column(Numeric)
+    predicted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class JobRun(Base):
     """New table, doesn't exist in the real Supabase project yet -- see
     WEATHER_KALSHI_TECHNICAL_PLAN.md checklist for the CREATE TABLE to run

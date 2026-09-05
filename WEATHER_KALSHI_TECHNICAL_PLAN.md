@@ -300,6 +300,14 @@ With the primary n8n migration complete, modeling resumed. Checked the real over
 **Step 6 — Read-only Kalshi integration**
 - Pull live market strikes and prices via the Kalshi API. Compute `model_probability - market_implied_probability` per strike and log it for at least a few weeks before touching order placement — you want to see if backtested edge persists live or evaporates (very common).
 
+**Step 6, started.** `jobs/daily_prediction_job.py` built and run for real against today's live market (2026-09-05). New table `kalshi_predictions` (`target_date, market_ticker, strike_type, floor_strike, cap_strike, forecast_high_f, residual_sample_size, model_probability, market_yes_bid, market_yes_ask, predicted_at`), RLS enabled immediately (same anon-key exposure class as the earlier Security Advisor fix — every new table from here on gets this by default). Read-only logging only — no order-placement wiring, matching the plan's own gate.
+
+Confirmed live against `KXHIGHNY-26SEP05` (`src/kalshi/client.py`'s new `fetch_open_event()`/`date_to_ticker_suffix()`): real markets are non-overlapping whole-degree buckets — `less than X` (`cap_strike` only), `between floor-cap` (inclusive both ends, confirmed via the event's own `rules_primary` text), `greater than X` (`floor_strike` only). Added `predicted_prob_bucket()` to `src/backtest/daily_high_backtest.py` to price these correctly from the existing residual-distribution model (4 new tests).
+
+**Key timing detail that would have been easy to get backwards**: today's live market resolves *tonight*, so it needs the forecast written *yesterday* for `target_date = today` (already sitting in `weather_daily_high_predictions`) — not a freshly-written today's row, which is `daily_high_forecast_job`'s forecast *for tomorrow*. The job only ever reads an existing row, never writes one. Uses ALL currently-available (`target_date < today`) KNYC-forecast-vs-Kalshi-settlement residuals — the live-deployment analogue of `walk_forward_backtest`'s chronological design, just applied once per real day.
+
+**First real result, worth logging honestly, not over-reading on one day**: model probability diverges meaningfully from the market's for today (2026-09-05, forecast 78°F). Model puts 44.6% on "less than 79°F" vs. the market's ~24-25%; market weights "between 79-80°F" much more heavily (62%) than the model does (25%). This is exactly the kind of divergence Step 6 exists to track over weeks — not evidence of edge from a single day, and not something to act on. Added to `render.yaml` as `daily-prediction` (`"48 13,14 * * *"`, ~3 min after `daily-high-forecast` so today's forecast row is guaranteed to exist yet), not yet deployed.
+
 **Step 7 — Only if Step 6 shows persistent, real edge: paper trading, then small live positions**
 - Fixed, small position sizing (e.g., capped Kelly fraction), hard daily loss limit, manual approval before any live order, at least initially.
 

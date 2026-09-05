@@ -5,7 +5,9 @@ import pytest
 
 from src.kalshi.client import (
     _first_nonempty_expiration_value,
+    date_to_ticker_suffix,
     event_ticker_to_date,
+    fetch_open_event,
     get_settlement_value,
 )
 
@@ -97,3 +99,24 @@ def test_get_settlement_value_no_value_in_either_tier_returns_none():
     historical_response = {"cursor": "", "markets": []}
     with patch("src.kalshi.client._get", side_effect=[live_response, historical_response]):
         assert get_settlement_value("KXHIGHNY-24DEC31") is None
+
+
+def test_date_to_ticker_suffix_is_the_inverse_of_event_ticker_to_date():
+    d = date(2026, 9, 5)
+    suffix = date_to_ticker_suffix(d)
+    assert suffix == "26SEP05"
+    assert event_ticker_to_date(f"KXHIGHNY-{suffix}") == d
+
+
+def test_date_to_ticker_suffix_pads_single_digit_day():
+    assert date_to_ticker_suffix(date(2026, 8, 5)) == "26AUG05"
+
+
+def test_fetch_open_event_builds_correct_ticker_and_returns_event():
+    fake_response = {"event": {"event_ticker": "KXHIGHNY-26SEP05", "markets": [{"ticker": "x"}]}}
+    with patch("src.kalshi.client._get", return_value=fake_response) as mock_get:
+        event = fetch_open_event("KXHIGHNY", date(2026, 9, 5))
+    assert event == fake_response["event"]
+    mock_get.assert_called_once_with(
+        "/events/KXHIGHNY-26SEP05", params={"with_nested_markets": "true"}, client=None
+    )

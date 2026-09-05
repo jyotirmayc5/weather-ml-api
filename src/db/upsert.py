@@ -8,6 +8,7 @@ here, deliberately."""
 from sqlalchemy.dialects.postgresql import insert
 
 from src.db.models import (
+    KalshiPrediction,
     KalshiSettlement,
     OpenMeteoHistoricalDaily,
     WeatherDailyHighPrediction,
@@ -103,3 +104,26 @@ def upsert_open_meteo_historical_daily(values: dict):
     doesn't change once pulled."""
     stmt = insert(OpenMeteoHistoricalDaily).values(**values)
     return stmt.on_conflict_do_nothing(index_elements=["target_date", "model"])
+
+
+def upsert_kalshi_prediction(values: dict):
+    """Updates on conflict, unlike the settlement/historical tables -- if the
+    job re-runs the same day (manual trigger, retry after a partial failure),
+    the market's yes_bid/yes_ask will have moved and the newer read is the
+    one worth keeping, not the first."""
+    stmt = insert(KalshiPrediction).values(**values)
+    update_columns = [
+        "strike_type",
+        "floor_strike",
+        "cap_strike",
+        "forecast_high_f",
+        "residual_sample_size",
+        "model_probability",
+        "market_yes_bid",
+        "market_yes_ask",
+        "predicted_at",
+    ]
+    return stmt.on_conflict_do_update(
+        index_elements=["target_date", "market_ticker"],
+        set_={col: getattr(stmt.excluded, col) for col in update_columns},
+    )

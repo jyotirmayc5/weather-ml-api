@@ -71,6 +71,30 @@ def event_ticker_to_date(event_ticker: str) -> date:
     return date(2000 + int(yy), _MONTHS[mon], int(dd))
 
 
+def date_to_ticker_suffix(d: date) -> str:
+    """date(2026, 9, 5) -> '26SEP05', the inverse of event_ticker_to_date's
+    parsing, for building a ticker to fetch rather than parsing one already
+    returned by the API."""
+    month_name = next(name for name, num in _MONTHS.items() if num == d.month)
+    return f"{d.year % 100:02d}{month_name}{d.day:02d}"
+
+
+def fetch_open_event(series_ticker: str, event_date: date, client: httpx.Client | None = None) -> dict:
+    """Fetches the live (not-yet-settled) event for a specific date, with its
+    nested bucket markets -- this is what daily_prediction_job.py reads to
+    find today's real Kalshi strike thresholds (floor_strike/cap_strike/
+    strike_type per market) and current yes_bid/yes_ask prices. Verified live
+    against KXHIGHNY-26SEP05 (WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 5): markets
+    are non-overlapping whole-degree buckets -- 'less than X' (cap_strike=X,
+    floor_strike=None), 'between floor-cap inclusive' (both set), 'greater
+    than X' (floor_strike=X, cap_strike=None). Returns the event dict with a
+    'markets' list; raises via httpx if the ticker doesn't exist (e.g. no
+    event listed yet for a future date)."""
+    ticker = f"{series_ticker}-{date_to_ticker_suffix(event_date)}"
+    data = _get(f"/events/{ticker}", params={"with_nested_markets": "true"}, client=client)
+    return data["event"]
+
+
 def fetch_settled_events(
     series_ticker: str, min_date: date | None = None, client: httpx.Client | None = None
 ) -> list[dict]:

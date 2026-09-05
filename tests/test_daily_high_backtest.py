@@ -6,6 +6,7 @@ from src.backtest.daily_high_backtest import (
     brier_score,
     leave_one_out_backtest,
     log_loss,
+    predicted_prob_bucket,
     predicted_prob_ge,
     reliability_table,
     walk_forward_backtest,
@@ -99,6 +100,30 @@ def test_walk_forward_skips_days_before_min_history():
     model_pairs, naive_pairs = walk_forward_backtest(days, strike_offsets=[0.0], min_history=2)
     assert len(model_pairs) == 1  # only day index 2 has >= 2 prior days
     assert len(naive_pairs) == 1
+
+
+def test_predicted_prob_bucket_less_than():
+    # forecast=70, residuals [-2,-1,0,1,2] -> candidates [68,69,70,71,72]
+    residuals = [-2, -1, 0, 1, 2]
+    # "less than 70": only 68,69 qualify -> 2/5
+    assert predicted_prob_bucket(70, residuals, "less", None, 70) == pytest.approx(2 / 5)
+
+
+def test_predicted_prob_bucket_between_inclusive():
+    residuals = [-2, -1, 0, 1, 2]
+    # "between 69-70" inclusive: 69,70 qualify -> 2/5
+    assert predicted_prob_bucket(70, residuals, "between", 69, 70) == pytest.approx(2 / 5)
+
+
+def test_predicted_prob_bucket_greater_than():
+    residuals = [-2, -1, 0, 1, 2]
+    # "greater than 70": only 71,72 qualify -> 2/5
+    assert predicted_prob_bucket(70, residuals, "greater", 70, None) == pytest.approx(2 / 5)
+
+
+def test_predicted_prob_bucket_rejects_unknown_strike_type():
+    with pytest.raises(ValueError):
+        predicted_prob_bucket(70, [1.0], "unknown", 70, 71)
 
 
 def test_reliability_table_buckets_and_averages_correctly():

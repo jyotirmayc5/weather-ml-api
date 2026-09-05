@@ -19,7 +19,8 @@
         480
       ],
       "id": "16c7edac-0e6e-4142-aedc-f54e52b7166f",
-      "name": "Schedule Predict Data"
+      "name": "Schedule Predict Data",
+      "disabled": true
     },
     {
       "parameters": {
@@ -52,7 +53,8 @@
         832
       ],
       "id": "c9b8475d-1feb-4df0-b5e5-27bae9e60195",
-      "name": "Schedule Actual HIgh"
+      "name": "Schedule Actual HIgh",
+      "disabled": true
     },
     {
       "parameters": {
@@ -111,7 +113,7 @@
     },
     {
       "parameters": {
-        "content": "Hourly prediction engine : NWS hourly forecast normalize hourly rows prediction engine API Convert to F Insert weather_predictions Stores hourly forecast_temperature_f and corrected_temperature_f",
+        "content": "Hourly prediction engine : NWS hourly forecast \u2192 Normalize hourly rows \u2192 prediction engine API \u2192 Convert to F \u2192 Insert weather_predictions ---- Stores hourly forecast_temperature_f and corrected_temperature_f",
         "height": 272,
         "width": 1488
       },
@@ -247,7 +249,8 @@
         1456
       ],
       "id": "1489ca8d-e54a-4465-87fa-019aab964666",
-      "name": "Schedule actuals latest"
+      "name": "Schedule actuals latest",
+      "disabled": true
     },
     {
       "parameters": {
@@ -301,7 +304,8 @@
         160
       ],
       "id": "096d7e25-6be2-4f7e-8e89-3c84dd776bba",
-      "name": "Schedule Predict Data1"
+      "name": "Schedule Predict Data1",
+      "disabled": true
     },
     {
       "parameters": {
@@ -356,29 +360,225 @@
             "id"
           ],
           "schema": [
-            { "id": "id", "displayName": "id", "required": false, "defaultMatch": true, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
-            { "id": "prediction_created_at", "displayName": "prediction_created_at", "required": false, "defaultMatch": false, "display": true, "type": "dateTime", "canBeUsedToMatch": true },
-            { "id": "target_date", "displayName": "target_date", "required": false, "defaultMatch": false, "display": true, "type": "dateTime", "canBeUsedToMatch": true },
-            { "id": "station", "displayName": "station", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "forecast_high_f", "displayName": "forecast_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "corrected_high_f", "displayName": "corrected_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "actual_high_f", "displayName": "actual_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
-            { "id": "raw_error_f", "displayName": "raw_error_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
-            { "id": "corrected_error_f", "displayName": "corrected_error_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
-            { "id": "avg_humidity_pct", "displayName": "avg_humidity_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "avg_dewpoint_f", "displayName": "avg_dewpoint_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "avg_sky_cover_pct", "displayName": "avg_sky_cover_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "max_precip_probability_pct", "displayName": "max_precip_probability_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "avg_wind_speed", "displayName": "avg_wind_speed", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "source", "displayName": "source", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "avg_wind_sin", "displayName": "avg_wind_sin", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "avg_wind_cos", "displayName": "avg_wind_cos", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "forecast_low_f", "displayName": "forecast_low_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "peak_heating_cloud_pct", "displayName": "peak_heating_cloud_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "peak_heating_temp_f", "displayName": "peak_heating_temp_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "lead_hours", "displayName": "lead_hours", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "month", "displayName": "month", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "day_of_year", "displayName": "day_of_year", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false }
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "prediction_created_at",
+              "displayName": "prediction_created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "target_date",
+              "displayName": "target_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "station",
+              "displayName": "station",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "forecast_high_f",
+              "displayName": "forecast_high_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "corrected_high_f",
+              "displayName": "corrected_high_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "actual_high_f",
+              "displayName": "actual_high_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "raw_error_f",
+              "displayName": "raw_error_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "corrected_error_f",
+              "displayName": "corrected_error_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "avg_humidity_pct",
+              "displayName": "avg_humidity_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "avg_dewpoint_f",
+              "displayName": "avg_dewpoint_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "avg_sky_cover_pct",
+              "displayName": "avg_sky_cover_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "max_precip_probability_pct",
+              "displayName": "max_precip_probability_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "avg_wind_speed",
+              "displayName": "avg_wind_speed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "avg_wind_sin",
+              "displayName": "avg_wind_sin",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "avg_wind_cos",
+              "displayName": "avg_wind_cos",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "forecast_low_f",
+              "displayName": "forecast_low_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "peak_heating_cloud_pct",
+              "displayName": "peak_heating_cloud_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "peak_heating_temp_f",
+              "displayName": "peak_heating_temp_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_hours",
+              "displayName": "lead_hours",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "month",
+              "displayName": "month",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "day_of_year",
+              "displayName": "day_of_year",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
           ],
           "attemptToConvertTypes": false,
           "convertFieldsToString": false
@@ -402,7 +602,7 @@
     },
     {
       "parameters": {
-        "content": "Daily High Workflow: 9:45 AM predict tomorrow's KNYC high | 11:55 PM update actual KNYC high",
+        "content": "Daily High Workflow: 9:45 AM \u2192 predict tomorrow\u2019s KNYC high || 11:55 PM \u2192 update actual KNYC high",
         "height": 624,
         "width": 960
       },
@@ -433,7 +633,8 @@
         352
       ],
       "id": "1a7953af-b04b-4a20-8f8c-8a95847df9bd",
-      "name": "Schedule Predict Data2"
+      "name": "Schedule Predict Data2",
+      "disabled": true
     },
     {
       "parameters": {
@@ -488,29 +689,225 @@
             "id"
           ],
           "schema": [
-            { "id": "id", "displayName": "id", "required": false, "defaultMatch": true, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
-            { "id": "prediction_created_at", "displayName": "prediction_created_at", "required": false, "defaultMatch": false, "display": true, "type": "dateTime", "canBeUsedToMatch": true },
-            { "id": "target_date", "displayName": "target_date", "required": false, "defaultMatch": false, "display": true, "type": "dateTime", "canBeUsedToMatch": true },
-            { "id": "station", "displayName": "station", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "forecast_high_f", "displayName": "forecast_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "corrected_high_f", "displayName": "corrected_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "actual_high_f", "displayName": "actual_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
-            { "id": "raw_error_f", "displayName": "raw_error_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
-            { "id": "corrected_error_f", "displayName": "corrected_error_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
-            { "id": "avg_humidity_pct", "displayName": "avg_humidity_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "avg_dewpoint_f", "displayName": "avg_dewpoint_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "avg_sky_cover_pct", "displayName": "avg_sky_cover_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "max_precip_probability_pct", "displayName": "max_precip_probability_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "avg_wind_speed", "displayName": "avg_wind_speed", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "source", "displayName": "source", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "avg_wind_sin", "displayName": "avg_wind_sin", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "avg_wind_cos", "displayName": "avg_wind_cos", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "forecast_low_f", "displayName": "forecast_low_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "peak_heating_cloud_pct", "displayName": "peak_heating_cloud_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "peak_heating_temp_f", "displayName": "peak_heating_temp_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "lead_hours", "displayName": "lead_hours", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "month", "displayName": "month", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "day_of_year", "displayName": "day_of_year", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false }
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "prediction_created_at",
+              "displayName": "prediction_created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "target_date",
+              "displayName": "target_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "station",
+              "displayName": "station",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "forecast_high_f",
+              "displayName": "forecast_high_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "corrected_high_f",
+              "displayName": "corrected_high_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "actual_high_f",
+              "displayName": "actual_high_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "raw_error_f",
+              "displayName": "raw_error_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "corrected_error_f",
+              "displayName": "corrected_error_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "avg_humidity_pct",
+              "displayName": "avg_humidity_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "avg_dewpoint_f",
+              "displayName": "avg_dewpoint_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "avg_sky_cover_pct",
+              "displayName": "avg_sky_cover_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "max_precip_probability_pct",
+              "displayName": "max_precip_probability_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "avg_wind_speed",
+              "displayName": "avg_wind_speed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "avg_wind_sin",
+              "displayName": "avg_wind_sin",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "avg_wind_cos",
+              "displayName": "avg_wind_cos",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "forecast_low_f",
+              "displayName": "forecast_low_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "peak_heating_cloud_pct",
+              "displayName": "peak_heating_cloud_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "peak_heating_temp_f",
+              "displayName": "peak_heating_temp_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_hours",
+              "displayName": "lead_hours",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "month",
+              "displayName": "month",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "day_of_year",
+              "displayName": "day_of_year",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
           ],
           "attemptToConvertTypes": false,
           "convertFieldsToString": false
@@ -550,7 +947,8 @@
         544
       ],
       "id": "d98f0074-770a-4334-b8fa-2219f72e4bdb",
-      "name": "Schedule Predict Data3"
+      "name": "Schedule Predict Data3",
+      "disabled": true
     },
     {
       "parameters": {
@@ -605,29 +1003,225 @@
             "id"
           ],
           "schema": [
-            { "id": "id", "displayName": "id", "required": false, "defaultMatch": true, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
-            { "id": "prediction_created_at", "displayName": "prediction_created_at", "required": false, "defaultMatch": false, "display": true, "type": "dateTime", "canBeUsedToMatch": true },
-            { "id": "target_date", "displayName": "target_date", "required": false, "defaultMatch": false, "display": true, "type": "dateTime", "canBeUsedToMatch": true },
-            { "id": "station", "displayName": "station", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "forecast_high_f", "displayName": "forecast_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "corrected_high_f", "displayName": "corrected_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "actual_high_f", "displayName": "actual_high_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
-            { "id": "raw_error_f", "displayName": "raw_error_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
-            { "id": "corrected_error_f", "displayName": "corrected_error_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": true },
-            { "id": "avg_humidity_pct", "displayName": "avg_humidity_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "avg_dewpoint_f", "displayName": "avg_dewpoint_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "avg_sky_cover_pct", "displayName": "avg_sky_cover_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "max_precip_probability_pct", "displayName": "max_precip_probability_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "avg_wind_speed", "displayName": "avg_wind_speed", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true },
-            { "id": "source", "displayName": "source", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "avg_wind_sin", "displayName": "avg_wind_sin", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "avg_wind_cos", "displayName": "avg_wind_cos", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "forecast_low_f", "displayName": "forecast_low_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "peak_heating_cloud_pct", "displayName": "peak_heating_cloud_pct", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "peak_heating_temp_f", "displayName": "peak_heating_temp_f", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "lead_hours", "displayName": "lead_hours", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "month", "displayName": "month", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false },
-            { "id": "day_of_year", "displayName": "day_of_year", "required": false, "defaultMatch": false, "display": true, "type": "number", "canBeUsedToMatch": true, "removed": false }
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "prediction_created_at",
+              "displayName": "prediction_created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "target_date",
+              "displayName": "target_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "station",
+              "displayName": "station",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "forecast_high_f",
+              "displayName": "forecast_high_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "corrected_high_f",
+              "displayName": "corrected_high_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "actual_high_f",
+              "displayName": "actual_high_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "raw_error_f",
+              "displayName": "raw_error_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "corrected_error_f",
+              "displayName": "corrected_error_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "avg_humidity_pct",
+              "displayName": "avg_humidity_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "avg_dewpoint_f",
+              "displayName": "avg_dewpoint_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "avg_sky_cover_pct",
+              "displayName": "avg_sky_cover_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "max_precip_probability_pct",
+              "displayName": "max_precip_probability_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "avg_wind_speed",
+              "displayName": "avg_wind_speed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "avg_wind_sin",
+              "displayName": "avg_wind_sin",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "avg_wind_cos",
+              "displayName": "avg_wind_cos",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "forecast_low_f",
+              "displayName": "forecast_low_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "peak_heating_cloud_pct",
+              "displayName": "peak_heating_cloud_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "peak_heating_temp_f",
+              "displayName": "peak_heating_temp_f",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_hours",
+              "displayName": "lead_hours",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "month",
+              "displayName": "month",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "day_of_year",
+              "displayName": "day_of_year",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
           ],
           "attemptToConvertTypes": false,
           "convertFieldsToString": false
@@ -819,7 +1413,8 @@
         192
       ],
       "id": "13471f41-e5e7-4914-810b-7f5fec968658",
-      "name": "Schedule prediction engine"
+      "name": "Schedule prediction engine",
+      "disabled": true
     },
     {
       "parameters": {
@@ -850,9 +1445,9 @@
     },
     {
       "parameters": {
-        "content": "11:55 PM update actual KNYC high",
+        "content": "11:55 PM \u2192 update actual KNYC high",
         "height": 224,
-        "width": 1408
+        "width": 1056
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -865,7 +1460,7 @@
     },
     {
       "parameters": {
-        "content": "Daily high summary : NWS 24H forecast Forecast HIGH Insert/update weather_daily_high_predictions Update corrected_high_f from weather_predictions",
+        "content": "Daily high summary : NWS 24H forecast \u2192 Forecast HIGH \u2192 Insert/update weather_daily_high_predictions \u2192 Update corrected_high_f from weather_predictions",
         "height": 240,
         "width": 1488
       },
@@ -880,7 +1475,7 @@
     },
     {
       "parameters": {
-        "content": "Top flow: hourly prediction engine weather_predictions\nMiddle flow: daily forecast high weather_daily_high_predictions\nBottom flow: actual high + errors updates weather_daily_high_predictions",
+        "content": "Top flow: hourly prediction engine \u2192 weather_predictions\nMiddle flow: daily forecast high \u2192 weather_daily_high_predictions\nBottom flow: actual high + errors \u2192 updates weather_daily_high_predictions",
         "height": 80,
         "width": 624
       },
@@ -957,58 +1552,386 @@
       }
     }
   ],
+  "pinData": {
+    "Schedule prediction engine": [
+      {
+        "json": {
+          "timestamp": "2026-06-16T15:00:23.007-04:00",
+          "Readable date": "June 16th 2026, 3:00:23 pm",
+          "Readable time": "3:00:23 pm",
+          "Day of week": "Tuesday",
+          "Year": "2026",
+          "Month": "June",
+          "Day of month": "16",
+          "Hour": "15",
+          "Minute": "00",
+          "Second": "23",
+          "Timezone": "America/New_York (UTC-04:00)"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
   "connections": {
     "Schedule Predict Data": {
-      "main": [[{ "node": "NWS OKX/33,37 24H", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "NWS OKX/33,37 24H",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Forecast HIGH": {
-      "main": [[{ "node": "NWS insert prediction high", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "NWS insert prediction high",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Schedule Actual HIgh": {
-      "main": [[{ "node": "KNYC actuals for EOD", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "KNYC actuals for EOD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "KNYC actuals for EOD": {
-      "main": [[{ "node": "Code in JavaScript", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Code in JavaScript": {
-      "main": [[{ "node": "Execute a SQL query1", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Schedule actuals latest": {
-      "main": [[
-        { "node": "Collect latest KNYC observations", "type": "main", "index": 0 },
-        { "node": "Collect latest KLGA observations", "type": "main", "index": 0 },
-        { "node": "Collect latest KJFK observations", "type": "main", "index": 0 },
-        { "node": "Collect latest KEWR observations", "type": "main", "index": 0 },
-        { "node": "Collect latest KTEB observations", "type": "main", "index": 0 }
-      ]]
+      "main": [
+        [
+          {
+            "node": "Collect latest KNYC observations",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Collect latest KLGA observations",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Collect latest KJFK observations",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Collect latest KEWR observations",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Collect latest KTEB observations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Collect latest KNYC observations": { "main": [[{ "node": "Merge", "type": "main", "index": 0 }]] },
-    "Collect latest KLGA observations": { "main": [[{ "node": "Merge", "type": "main", "index": 1 }]] },
-    "Collect latest KJFK observations": { "main": [[{ "node": "Merge", "type": "main", "index": 2 }]] },
-    "Collect latest KEWR observations": { "main": [[{ "node": "Merge", "type": "main", "index": 3 }]] },
-    "Collect latest KTEB observations": { "main": [[{ "node": "Merge", "type": "main", "index": 4 }]] },
-    "Merge": { "main": [[{ "node": "Return Observations", "type": "main", "index": 0 }]] },
-    "Schedule Predict Data1": { "main": [[{ "node": "NWS OKX/34,35 24H1", "type": "main", "index": 0 }]] },
-    "Forecast HIGH1": { "main": [[{ "node": "NWS insert prediction high1", "type": "main", "index": 0 }]] },
-    "Schedule Predict Data2": { "main": [[{ "node": "NWS OKX/36,33 24H2", "type": "main", "index": 0 }]] },
-    "Forecast HIGH2": { "main": [[{ "node": "NWS insert prediction high2", "type": "main", "index": 0 }]] },
-    "Schedule Predict Data3": { "main": [[{ "node": "NWS OKX/31,39 24H3", "type": "main", "index": 0 }]] },
-    "Forecast HIGH3": { "main": [[{ "node": "NWS insert prediction high3", "type": "main", "index": 0 }]] },
-    "NWS OKX/33,37 24H": { "main": [[{ "node": "Forecast HIGH", "type": "main", "index": 0 }]] },
-    "NWS OKX/34,35 24H1": { "main": [[{ "node": "Forecast HIGH1", "type": "main", "index": 0 }]] },
-    "NWS OKX/36,33 24H2": { "main": [[{ "node": "Forecast HIGH2", "type": "main", "index": 0 }]] },
-    "NWS OKX/31,39 24H3": { "main": [[{ "node": "Forecast HIGH3", "type": "main", "index": 0 }]] },
-    "Return Observations": { "main": [[{ "node": "Execute a SQL query", "type": "main", "index": 0 }]] },
-    "Limit": { "main": [[{ "node": "prediction engine API", "type": "main", "index": 0 }]] },
-    "Convert to F": { "main": [[{ "node": "Execute a SQL query4", "type": "main", "index": 0 }]] },
-    "Normalize NWS Data": { "main": [[{ "node": "Limit", "type": "main", "index": 0 }]] },
-    "KNYC NWS Observations": { "main": [[{ "node": "Normalize NWS Data", "type": "main", "index": 0 }]] },
-    "Schedule prediction engine": { "main": [[{ "node": "KNYC NWS Observations", "type": "main", "index": 0 }]] },
-    "prediction engine API": { "main": [[{ "node": "Convert to F", "type": "main", "index": 0 }]] },
-    "Execute a SQL query4": { "main": [[]] },
-    "NWS insert prediction high": { "main": [[{ "node": "Update corrected_high_f", "type": "main", "index": 0 }]] }
+    "Collect latest KNYC observations": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect latest KLGA observations": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Collect latest KJFK observations": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Collect latest KEWR observations": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Collect latest KTEB observations": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Return Observations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Predict Data1": {
+      "main": [
+        [
+          {
+            "node": "NWS OKX/34,35 24H1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Forecast HIGH1": {
+      "main": [
+        [
+          {
+            "node": "NWS insert prediction high1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Predict Data2": {
+      "main": [
+        [
+          {
+            "node": "NWS OKX/36,33 24H2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Forecast HIGH2": {
+      "main": [
+        [
+          {
+            "node": "NWS insert prediction high2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Predict Data3": {
+      "main": [
+        [
+          {
+            "node": "NWS OKX/31,39 24H3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Forecast HIGH3": {
+      "main": [
+        [
+          {
+            "node": "NWS insert prediction high3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NWS OKX/33,37 24H": {
+      "main": [
+        [
+          {
+            "node": "Forecast HIGH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NWS OKX/34,35 24H1": {
+      "main": [
+        [
+          {
+            "node": "Forecast HIGH1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NWS OKX/36,33 24H2": {
+      "main": [
+        [
+          {
+            "node": "Forecast HIGH2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NWS OKX/31,39 24H3": {
+      "main": [
+        [
+          {
+            "node": "Forecast HIGH3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Return Observations": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "prediction engine API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to F": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize NWS Data": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "KNYC NWS Observations": {
+      "main": [
+        [
+          {
+            "node": "Normalize NWS Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule prediction engine": {
+      "main": [
+        [
+          {
+            "node": "KNYC NWS Observations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "prediction engine API": {
+      "main": [
+        [
+          {
+            "node": "Convert to F",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query4": {
+      "main": [
+        []
+      ]
+    },
+    "NWS insert prediction high": {
+      "main": [
+        [
+          {
+            "node": "Update corrected_high_f",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
-  "active": true,
+  "active": false,
   "settings": {
     "executionOrder": "v1",
     "timeSavedMode": "fixed",
@@ -1016,7 +1939,11 @@
     "callerPolicy": "workflowsFromSameOwner",
     "availableInMCP": false
   },
-  "versionId": "3cad4c1e-1c18-44e3-bc19-89225efb708c",
+  "versionId": "4fa2f1ad-1046-4779-8b1c-d7b07472f370",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "784afbb56ef6b72f3c9f55584f5284c30f36817616c2a9145afc8cd93a1de775"
+  },
   "id": "FGm7HPe1BIZC3lx8",
   "tags": []
 }

@@ -118,6 +118,50 @@ def leave_one_out_backtest(days: list[tuple], strike_offsets: list[float]):
     return model_pairs, naive_pairs
 
 
+def walk_forward_backtest(days: list[tuple], strike_offsets: list[float], min_history: int = 20):
+    """Chronological alternative to leave_one_out_backtest, fixing two real
+    problems found only after running the leave-one-out version against the
+    full (post-migration) 92-day KNYC/Kalshi dataset:
+
+    1. Look-ahead leakage: leave-one-out lets a July residual inform a May
+       prediction, which could never happen in real deployment -- on any
+       given day, only residuals from STRICTLY EARLIER days would exist yet.
+    2. A self-exclusion tautology at wide, sparsely-populated strike offsets
+       (found via scripts/kalshi_ground_truth_backtest.py's real run): for an
+       offset like +4F where few days' residuals clear it, whether a day's
+       OWN residual clears the strike determines whether it's excluded from
+       its own held-out pool -- which shifts its predicted probability by
+       exactly 1/(n-1), just enough to perfectly separate outcome=1 days from
+       outcome=0 days within that offset's narrow probability range. The
+       resulting reliability-table bucket then looks either wildly wrong
+       (e.g. 20% predicted, 100% realized) or suspiciously perfect, neither of
+       which reflects genuine calibration -- see WEATHER_KALSHI_TECHNICAL_PLAN.md
+       Sec 5 for the concrete numbers that surfaced this.
+
+    Walk-forward eliminates both: `days` must be pre-sorted chronologically,
+    and day i is scored using ONLY days[0:i]'s residuals -- day i's own
+    residual is never in the pool by construction, not via explicit
+    exclusion, so there's no self-referential relationship between a day's
+    predicted probability and its own outcome. `min_history` skips the
+    earliest days that don't yet have enough prior residuals to fit a
+    meaningful distribution from (an arbitrary distributional choice, not a
+    correctness requirement -- 20 is a reasonable floor, not a validated
+    optimum)."""
+    model_pairs = []
+    naive_pairs = []
+
+    for i in range(min_history, len(days)):
+        _date, forecast, _residual, actual = days[i]
+        prior_residuals = [r for _, _, r, _ in days[:i]]
+        for offset in strike_offsets:
+            strike = forecast + offset
+            outcome = 1 if actual >= strike else 0
+            model_pairs.append((predicted_prob_ge(forecast, prior_residuals, strike), outcome))
+            naive_pairs.append((1.0 if forecast >= strike else 0.0, outcome))
+
+    return model_pairs, naive_pairs
+
+
 def reliability_table(pairs: list[tuple[float, int]], n_bins: int = 5):
     """Buckets predictions into n_bins equal-width probability ranges and
     reports predicted-average vs realized-frequency per bucket -- the

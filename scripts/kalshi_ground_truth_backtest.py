@@ -7,20 +7,32 @@ days differing by >=1F. The earlier backtest (daily_high_backtest.py) scored
 against the wrong target. This reuses its exact same, already-tested scoring
 functions (leave_one_out_backtest, brier_score, log_loss, reliability_table)
 against the correct one.
+
+This is Phase 2's "small, correct" dataset (WEATHER_KALSHI_TECHNICAL_PLAN.md
+Sec 5): trains/scores only on OUR OWN NWS-sourced forecast_high_f, the exact
+same forecast source live in production (daily_high_forecast_job.py). Kept
+deliberately separate from the much larger Open-Meteo-based exploratory
+analysis (scripts/open_meteo_seasonal_analysis.py) -- Open-Meteo uses a
+different underlying model (GFS), so its forecast errors have their own bias
+characteristics; fitting this model's numbers on Open-Meteo data and applying
+them to NWS-sourced forecasts would risk the same source-mismatch trap as the
+Sec 4a pressure-bias finding.
+
+Reads from the now-backfilled kalshi_settlements table directly (scripts/
+backfill_kalshi_settlements.py) rather than re-hitting the live Kalshi API
+per event -- that backfill is exactly what this table is for.
 """
 import sys
-from datetime import date
 from urllib.parse import unquote, urlsplit
 
 import psycopg2
 
 from src.backtest.daily_high_backtest import (
     brier_score,
-    leave_one_out_backtest,
     log_loss,
     reliability_table,
+    walk_forward_backtest,
 )
-from src.kalshi.client import event_ticker_to_date, fetch_settled_events, get_settlement_value
 
 
 def load_dsn(env_path=".env"):
@@ -32,53 +44,53 @@ def load_dsn(env_path=".env"):
     raise RuntimeError(f"DATABASE_URL not found in {env_path}")
 
 
-def load_forecasts(min_date):
+def connect():
     parts = urlsplit(load_dsn())
-    conn = psycopg2.connect(
+    return psycopg2.connect(
         host=parts.hostname,
         port=parts.port,
         user=unquote(parts.username),
         password=unquote(parts.password),
         dbname=parts.path.lstrip("/"),
     )
+
+
+def load_days(conn):
+    """(target_date, forecast_high_f, residual, kalshi_settled_value_f) for
+    every day with both a real KNYC forecast and a real Kalshi settlement."""
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT target_date, forecast_high_f
-        FROM weather_daily_high_predictions
-        WHERE station = 'KNYC' AND forecast_high_f IS NOT NULL AND target_date >= %s
-        ORDER BY target_date;
-        """,
-        (min_date,),
+        SELECT d.target_date, d.forecast_high_f, k.settled_value_f
+        FROM weather_daily_high_predictions d
+        JOIN kalshi_settlements k ON k.target_date = d.target_date
+        WHERE d.station = 'KNYC' AND d.forecast_high_f IS NOT NULL
+        ORDER BY d.target_date;
+        """
     )
-    result = {row[0]: float(row[1]) for row in cur.fetchall()}
-    conn.close()
-    return result
+    return [
+        (target_date, float(forecast), float(settled) - float(forecast), float(settled))
+        for target_date, forecast, settled in cur.fetchall()
+    ]
 
 
 def main():
-    earliest = date(2026, 5, 25)
-    forecasts = load_forecasts(earliest)
+    conn = connect()
+    days = load_days(conn)
+    conn.close()
 
-    print(f"Pulling Kalshi settlements back to {earliest}...")
-    events = fetch_settled_events("KXHIGHNY", min_date=earliest)
-
-    days = []  # (date, forecast_high_f, residual, kalshi_actual)
-    for event in events:
-        event_date = event_ticker_to_date(event["event_ticker"])
-        forecast = forecasts.get(event_date)
-        if forecast is None:
-            continue
-        kalshi_value = get_settlement_value(event["event_ticker"])
-        if kalshi_value is None:
-            continue
-        days.append((event_date, forecast, kalshi_value - forecast, kalshi_value))
-
-    days.sort()
-    print(f"Scoring against {len(days)} days with both a forecast and a real Kalshi settlement.\n")
+    print(f"Loaded {len(days)} days with both a real KNYC forecast and a real Kalshi settlement.")
+    print(f"Range: {days[0][0]} to {days[-1][0]}\n")
 
     strike_offsets = [-4, -2, 0, 2, 4]
-    model_pairs, naive_pairs = leave_one_out_backtest(days, strike_offsets)
+    min_history = 20
+    model_pairs, naive_pairs = walk_forward_backtest(days, strike_offsets, min_history=min_history)
+    print(
+        f"Walk-forward: scoring days[{min_history}:] using only strictly earlier days' "
+        f"residuals ({len(days) - min_history} of {len(days)} days scored, chronological, "
+        "no future leakage -- see src/backtest/daily_high_backtest.py docstring for why "
+        "this replaced leave-one-out).\n"
+    )
 
     print("=== Residual-distribution model, scored against REAL Kalshi settlements ===")
     print(f"  Brier score: {brier_score(model_pairs):.4f}")

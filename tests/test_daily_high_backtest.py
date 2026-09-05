@@ -8,6 +8,7 @@ from src.backtest.daily_high_backtest import (
     log_loss,
     predicted_prob_ge,
     reliability_table,
+    walk_forward_backtest,
 )
 
 
@@ -75,6 +76,29 @@ def test_naive_baseline_ignores_uncertainty_entirely():
     # strike = forecast = 70 for both days; naive predicts 1.0 purely because
     # forecast>=strike, regardless of any residual/uncertainty
     assert naive_pairs == [(1.0, 1), (1.0, 0)]  # actual 73>=70, 69<70
+
+
+def test_walk_forward_never_uses_a_days_own_or_future_residuals():
+    # 5 days, chronological. Day index 3 (min_history=3) should only ever see
+    # days[0:3]'s residuals -- never its own (day 3) or day 4's (the future).
+    days = [
+        ("d0", 70.0, 1.0, 71.0),
+        ("d1", 70.0, 1.0, 71.0),
+        ("d2", 70.0, 1.0, 71.0),
+        ("d3", 70.0, -5.0, 65.0),  # own residual would predict 0 confidence
+        ("d4", 70.0, 5.0, 75.0),   # future residual must not leak backward
+    ]
+    model_pairs, _ = walk_forward_backtest(days, strike_offsets=[1.0], min_history=3)
+    # day3: strike=71, prior residuals=[1,1,1] (all clear) -> prob=1.0,
+    # regardless of day3's own -5 residual or day4's future +5 residual.
+    assert model_pairs[0] == (1.0, 0)  # actual=65 does not clear strike=71
+
+
+def test_walk_forward_skips_days_before_min_history():
+    days = [("d0", 70.0, 1.0, 71.0), ("d1", 70.0, 1.0, 71.0), ("d2", 70.0, 1.0, 71.0)]
+    model_pairs, naive_pairs = walk_forward_backtest(days, strike_offsets=[0.0], min_history=2)
+    assert len(model_pairs) == 1  # only day index 2 has >= 2 prior days
+    assert len(naive_pairs) == 1
 
 
 def test_reliability_table_buckets_and_averages_correctly():

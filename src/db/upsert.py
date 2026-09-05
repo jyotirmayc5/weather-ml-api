@@ -8,6 +8,7 @@ here, deliberately."""
 from sqlalchemy.dialects.postgresql import insert
 
 from src.db.models import (
+    KalshiMarketPrice,
     KalshiPrediction,
     KalshiSettlement,
     OpenMeteoHistoricalDaily,
@@ -104,6 +105,14 @@ def upsert_open_meteo_historical_daily(values: dict):
     doesn't change once pulled."""
     stmt = insert(OpenMeteoHistoricalDaily).values(**values)
     return stmt.on_conflict_do_nothing(index_elements=["target_date", "model"])
+
+
+def upsert_kalshi_market_price(values: dict):
+    """Insert-or-ignore on (target_date, market_ticker) -- a one-time
+    backfill of historical prices that don't change once pulled, same
+    pattern as upsert_kalshi_settlement/upsert_open_meteo_historical_daily."""
+    stmt = insert(KalshiMarketPrice).values(**values)
+    return stmt.on_conflict_do_nothing(index_elements=["target_date", "market_ticker"])
 
 
 def upsert_kalshi_prediction(values: dict):

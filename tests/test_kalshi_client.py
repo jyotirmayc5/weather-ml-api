@@ -1,14 +1,18 @@
 from datetime import date
 from unittest.mock import patch
 
+import httpx
 import pytest
 
 from src.kalshi.client import (
     _first_nonempty_expiration_value,
     date_to_ticker_suffix,
     event_ticker_to_date,
+    fetch_candlesticks,
+    fetch_event_markets,
     fetch_open_event,
     get_settlement_value,
+    market_prob_near_time,
 )
 
 
@@ -110,6 +114,77 @@ def test_date_to_ticker_suffix_is_the_inverse_of_event_ticker_to_date():
 
 def test_date_to_ticker_suffix_pads_single_digit_day():
     assert date_to_ticker_suffix(date(2026, 8, 5)) == "26AUG05"
+
+
+def test_fetch_event_markets_uses_live_tier_when_available():
+    fake_response = {"event": {"markets": [{"ticker": "KXHIGHNY-26AUG20-T78"}]}}
+    with patch("src.kalshi.client._get", return_value=fake_response) as mock_get:
+        markets = fetch_event_markets("KXHIGHNY", date(2026, 8, 20))
+    assert markets == [{"ticker": "KXHIGHNY-26AUG20-T78"}]
+    mock_get.assert_called_once_with(
+        "/events/KXHIGHNY-26AUG20", params={"with_nested_markets": "true"}, client=None
+    )
+
+
+def test_fetch_event_markets_falls_back_to_historical_tier():
+    live_response = {"event": {"markets": []}}
+    historical_response = {"cursor": "", "markets": [{"ticker": "KXHIGHNY-24DEC31-T57"}]}
+    with patch("src.kalshi.client._get", side_effect=[live_response, historical_response]) as mock_get:
+        markets = fetch_event_markets("KXHIGHNY", date(2024, 12, 31))
+    assert markets == [{"ticker": "KXHIGHNY-24DEC31-T57"}]
+    assert mock_get.call_count == 2
+    assert mock_get.call_args_list[1].kwargs["params"] == {"event_ticker": "KXHIGHNY-24DEC31"}
+
+
+def test_fetch_candlesticks_builds_correct_url_and_params():
+    fake_response = {"candlesticks": [{"end_period_ts": 100}]}
+    with patch("src.kalshi.client._get", return_value=fake_response) as mock_get:
+        candles = fetch_candlesticks("KXHIGHNY", "KXHIGHNY-26AUG20-T78", 100, 200, period_interval=1)
+    assert candles == [{"end_period_ts": 100}]
+    mock_get.assert_called_once_with(
+        "/series/KXHIGHNY/markets/KXHIGHNY-26AUG20-T78/candlesticks",
+        params={"start_ts": 100, "end_ts": 200, "period_interval": 1},
+        client=None,
+    )
+
+
+def test_market_prob_near_time_picks_closest_candle_and_computes_mid():
+    candles = [
+        {"end_period_ts": 100, "yes_bid": {"close_dollars": "0.10"}, "yes_ask": {"close_dollars": "0.20"}},
+        {"end_period_ts": 500, "yes_bid": {"close_dollars": "0.40"}, "yes_ask": {"close_dollars": "0.60"}},
+    ]
+    # target=550 is closer to the second candle (500) than the first (100)
+    assert market_prob_near_time(candles, target_ts=550) == pytest.approx(0.5)
+
+
+def test_market_prob_near_time_empty_candles_returns_none():
+    assert market_prob_near_time([], target_ts=100) is None
+
+
+def test_fetch_candlesticks_404_returns_empty_list_not_an_error():
+    # Real behavior confirmed live: candlestick retention is its own shorter
+    # window than the settlement live/historical-tier split -- a market old
+    # enough that fetch_event_markets still finds it fine can still 404 here.
+    # That's a legitimate "no data retained", not something callers should
+    # crash on.
+    request = httpx.Request("GET", "https://example.com")
+    response = httpx.Response(404, request=request, json={"error": {"message": "not found"}})
+    with patch(
+        "src.kalshi.client._get",
+        side_effect=httpx.HTTPStatusError("404", request=request, response=response),
+    ):
+        assert fetch_candlesticks("KXHIGHNY", "KXHIGHNY-26MAY25-T79", 100, 200) == []
+
+
+def test_fetch_candlesticks_reraises_non_404_errors():
+    request = httpx.Request("GET", "https://example.com")
+    response = httpx.Response(500, request=request)
+    with patch(
+        "src.kalshi.client._get",
+        side_effect=httpx.HTTPStatusError("500", request=request, response=response),
+    ):
+        with pytest.raises(httpx.HTTPStatusError):
+            fetch_candlesticks("KXHIGHNY", "KXHIGHNY-26MAY25-T79", 100, 200)
 
 
 def test_fetch_open_event_builds_correct_ticker_and_returns_event():

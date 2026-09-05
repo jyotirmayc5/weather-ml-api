@@ -28,14 +28,18 @@ def _is_retryable(exc: BaseException) -> bool:
     if isinstance(exc, httpx.TransportError):
         return True
     if isinstance(exc, httpx.HTTPStatusError):
-        return exc.response.status_code >= 500
+        # 429 confirmed real and hit live during scripts/backfill_kalshi_market_prices.py's
+        # first full run (WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 5) -- a tight loop of many
+        # requests across days/markets triggered real rate limiting, previously not retried
+        # at all since only >=500 counted, crashing the whole backfill on the first 429.
+        return exc.response.status_code >= 500 or exc.response.status_code == 429
     return False
 
 
 _retry = retry(
     retry=retry_if_exception(_is_retryable),
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=10),
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=1, max=20),
     reraise=True,
 )
 
@@ -141,6 +145,78 @@ def _first_nonempty_expiration_value(markets: list[dict]) -> float | None:
         if value:
             return float(value)
     return None
+
+
+def fetch_event_markets(series_ticker: str, event_date: date, client: httpx.Client | None = None) -> list[dict]:
+    """All bucket markets (with strike_type/floor_strike/cap_strike, whether
+    the event is still live or has rolled into Kalshi's historical tier) for
+    a given date -- same live-then-historical-tier fallback pattern as
+    get_settlement_value (Sec 5c): the live /events/{ticker} endpoint returns
+    an empty markets list once an event rolls into the historical tier, so
+    this falls back to /historical/markets?event_ticker=... Confirmed live
+    that the historical-tier endpoint carries the same strike_type/
+    floor_strike/cap_strike fields the live tier does, not just settlement
+    data (WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 5)."""
+    ticker = f"{series_ticker}-{date_to_ticker_suffix(event_date)}"
+    data = _get(f"/events/{ticker}", params={"with_nested_markets": "true"}, client=client)
+    markets = data.get("event", {}).get("markets", [])
+    if markets:
+        return markets
+
+    historical = _get("/historical/markets", params={"event_ticker": ticker}, client=client)
+    return historical.get("markets", [])
+
+
+def fetch_candlesticks(
+    series_ticker: str,
+    market_ticker: str,
+    start_ts: int,
+    end_ts: int,
+    period_interval: int = 1,
+    client: httpx.Client | None = None,
+) -> list[dict]:
+    """Historical price candlesticks for one market. period_interval is in
+    minutes -- confirmed live that both 1 (minute) and 60 (hourly) work.
+    Each candle's yes_bid/yes_ask close_dollars are the market-implied
+    probability bounds at that moment; price.close_dollars is sometimes
+    absent (no trade that minute) but yes_bid/yes_ask close_dollars carry
+    forward from the previous candle, so those are the more reliable field
+    to read for "what was the market pricing this at".
+
+    Candlestick retention is its OWN separate, shorter window than the
+    settlement live/historical-tier split (get_settlement_value/
+    fetch_event_markets) -- confirmed live by bisecting the real boundary
+    (WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 5): a market from ~69 days ago
+    returns real candles, one from ~70 days ago 404s, even though both are
+    well past the settlement historical-tier cutoff and fetch_event_markets
+    finds both events fine. A 404 here means "no candle data retained for
+    this market", a legitimate empty result for old-enough markets, not an
+    error -- returns [] rather than raising, so callers can treat it the same
+    as "no trading activity happened to occur in this window"."""
+    try:
+        data = _get(
+            f"/series/{series_ticker}/markets/{market_ticker}/candlesticks",
+            params={"start_ts": start_ts, "end_ts": end_ts, "period_interval": period_interval},
+            client=client,
+        )
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            return []
+        raise
+    return data.get("candlesticks", [])
+
+
+def market_prob_near_time(candles: list[dict], target_ts: int) -> float | None:
+    """Mid-price ((yes_bid + yes_ask) / 2 close_dollars) of the candle whose
+    end_period_ts is closest to target_ts -- the market-implied probability
+    estimate at that moment. Returns None if candles is empty (e.g. no
+    trading activity was ever recorded in the requested window)."""
+    if not candles:
+        return None
+    closest = min(candles, key=lambda c: abs(c["end_period_ts"] - target_ts))
+    bid = float(closest["yes_bid"]["close_dollars"])
+    ask = float(closest["yes_ask"]["close_dollars"])
+    return (bid + ask) / 2
 
 
 def get_settlement_value(event_ticker: str, client: httpx.Client | None = None) -> float | None:

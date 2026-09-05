@@ -9,6 +9,7 @@ from sqlalchemy.dialects import postgresql
 
 from src.db.upsert import (
     upsert_daily_high_prediction,
+    upsert_kalshi_market_price,
     upsert_kalshi_prediction,
     upsert_weather_observation,
     upsert_weather_prediction,
@@ -121,6 +122,22 @@ def test_kalshi_prediction_upsert_targets_target_date_and_market_ticker():
     assert "ON CONFLICT (target_date, market_ticker) DO UPDATE SET" in sql
     assert "model_probability = excluded.model_probability" in sql
     assert "market_yes_bid = excluded.market_yes_bid" in sql
+
+
+def test_kalshi_market_price_upsert_is_do_nothing_on_target_date_ticker():
+    stmt = upsert_kalshi_market_price(
+        {
+            "target_date": "2026-08-20",
+            "market_ticker": "KXHIGHNY-26AUG20-T78",
+            "strike_type": "less",
+            "cap_strike": 78,
+            "market_prob_at_forecast_time": 0.15,
+            "candle_ts": 1755690300,
+            "pulled_at": "2026-09-05T14:00:00Z",
+        }
+    )
+    sql = compiled(stmt)
+    assert "ON CONFLICT (target_date, market_ticker) DO NOTHING" in sql
 
 
 def test_daily_high_upsert_never_overwrites_actual_or_corrected_columns():

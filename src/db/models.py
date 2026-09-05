@@ -172,6 +172,35 @@ class KalshiPrediction(Base):
     predicted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class KalshiMarketPrice(Base):
+    """New table -- WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 5 Step 4: what the
+    market was actually pricing a bucket at, near the real ~9:45am ET
+    forecast moment, for our 92 real production days (2026-05-25 onward).
+    This is the missing piece for the real "beats the market" bar --
+    kalshi_settlements only ever recorded the FINAL settled outcome, never
+    what the market thought beforehand. One-time backfill
+    (scripts/backfill_kalshi_market_prices.py), not an ongoing job -- going
+    forward, kalshi_predictions already captures live market prices
+    alongside the model's own prediction each morning."""
+
+    __tablename__ = "kalshi_market_prices"
+    __table_args__ = (
+        UniqueConstraint(
+            "target_date", "market_ticker", name="kalshi_market_prices_target_date_ticker_key"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    target_date: Mapped[date] = mapped_column(Date)
+    market_ticker: Mapped[str] = mapped_column(String)
+    strike_type: Mapped[str] = mapped_column(String)
+    floor_strike: Mapped[Optional[float]] = mapped_column(Numeric)
+    cap_strike: Mapped[Optional[float]] = mapped_column(Numeric)
+    market_prob_at_forecast_time: Mapped[Optional[float]] = mapped_column(Numeric)
+    candle_ts: Mapped[Optional[int]] = mapped_column()
+    pulled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class JobRun(Base):
     """New table, doesn't exist in the real Supabase project yet -- see
     WEATHER_KALSHI_TECHNICAL_PLAN.md checklist for the CREATE TABLE to run

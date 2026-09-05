@@ -1,12 +1,19 @@
-"""Health check for all 6 cron jobs -- catches two failure modes job_runs
-alone can't distinguish from "healthy": (1) an explicit failed status, and
-(2) staleness, i.e. a job that hasn't logged ANY run (success or failure)
-recently enough. (2) exists specifically because a job that crashes before
-track_job_run() ever executes (e.g. a missing DATABASE_URL, as happened to
-kalshi_settlement_job on its first real Render-scheduled run) writes NOTHING
-to job_runs at all -- "zero failed rows" in that case means "zero failures we
-could see", not "zero failures". Run this periodically instead of just
-checking for failed rows.
+"""Health check for all 7 real production cron jobs -- catches two failure
+modes job_runs alone can't distinguish from "healthy": (1) an explicit failed
+status, and (2) staleness, i.e. a job that hasn't logged ANY run (success or
+failure) recently enough. (2) exists specifically because a job that crashes
+before track_job_run() ever executes (e.g. a missing DATABASE_URL, as
+happened to kalshi_settlement_job, latest-observations, daily-high-forecast,
+actual-high-update, and daily-prediction at various points during the
+cutover) writes NOTHING to job_runs at all -- "zero failed rows" in that case
+means "zero failures we could see", not "zero failures". Run this
+periodically instead of just checking for failed rows.
+
+Updated post-migration (WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 4/5): the 5
+shadow-mode jobs this used to monitor were all deleted once their real
+counterparts were confirmed as sole writers -- watching their now-nonexistent
+job_names would silently report false "NO RUNS EVER LOGGED" alarms forever
+while saying nothing about the real jobs that actually matter now.
 """
 import sys
 from datetime import datetime, timedelta, timezone
@@ -16,11 +23,12 @@ import psycopg2
 
 # job_name -> max acceptable gap since its last logged run (any status)
 EXPECTED_INTERVALS = {
-    "latest_observations_job_shadow": timedelta(minutes=25),
-    "hourly_forecast_job_shadow": timedelta(minutes=90),
-    "daily_high_forecast_job_shadow": timedelta(hours=26),
-    "corrected_high_update_job_shadow": timedelta(hours=26),
-    "actual_high_update_job_shadow": timedelta(hours=26),
+    "latest_observations_job": timedelta(minutes=25),
+    "hourly_forecast_job": timedelta(minutes=90),
+    "daily_high_forecast_job": timedelta(hours=26),
+    "corrected_high_update_job": timedelta(hours=26),
+    "actual_high_update_job": timedelta(hours=26),
+    "daily_prediction_job": timedelta(hours=26),
     "kalshi_settlement_job": timedelta(hours=26),
 }
 

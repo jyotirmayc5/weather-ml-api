@@ -54,7 +54,11 @@ def outcome_for_bucket(settled_value: float, strike_type: str, floor_strike, cap
     raise ValueError(f"unrecognized strike_type {strike_type!r}")
 
 
-def main():
+def build_report() -> str:
+    """Returns the full report as a plain-text string, instead of printing it
+    directly -- lets other scripts (e.g. scripts/send_weekly_scorecard_email.py)
+    reuse the exact same logic as the report body, rather than parsing stdout
+    from a subprocess or duplicating the query/scoring code."""
     conn = connect()
     cur = conn.cursor()
     cur.execute(
@@ -70,12 +74,11 @@ def main():
     conn.close()
 
     if not rows:
-        print(
+        return (
             "No scored days yet -- either daily_prediction_job hasn't logged any days that have "
             "since settled, or kalshi_settlement_job hasn't pulled that settlement in yet. "
             "This is expected early on; check back after a few real days have passed."
         )
-        return 0
 
     model_pairs, market_pairs = [], []
     dates_scored = set()
@@ -89,27 +92,33 @@ def main():
         market_pairs.append((market_mid, outcome))
         dates_scored.add(target_date)
 
-    print(f"Scored {len(model_pairs)} (day, bucket) pairs across {len(dates_scored)} real settled days "
-          f"({min(dates_scored)} to {max(dates_scored)}).\n")
-
     model_brier, market_brier = brier_score(model_pairs), brier_score(market_pairs)
     model_ll, market_ll = log_loss(model_pairs), log_loss(market_pairs)
 
-    print("=== Model (daily_prediction_job's live predictions) ===")
-    print(f"  Brier score: {model_brier:.4f}")
-    print(f"  Log loss:    {model_ll:.4f}")
-
-    print("\n=== Real market price, at the time predictions were logged ===")
-    print(f"  Brier score: {market_brier:.4f}")
-    print(f"  Log loss:    {market_ll:.4f}")
-
-    print(f"\n{'Model beats market' if model_brier < market_brier else 'Market beats model'} "
-          f"on Brier score ({model_brier:.4f} vs {market_brier:.4f}).")
-    print(
-        "\nThis is what to check periodically, not any single day's diff on the dashboard. "
+    lines = [
+        f"Scored {len(model_pairs)} (day, bucket) pairs across {len(dates_scored)} real settled days "
+        f"({min(dates_scored)} to {max(dates_scored)}).",
+        "",
+        "=== Model (daily_prediction_job's live predictions) ===",
+        f"  Brier score: {model_brier:.4f}",
+        f"  Log loss:    {model_ll:.4f}",
+        "",
+        "=== Real market price, at the time predictions were logged ===",
+        f"  Brier score: {market_brier:.4f}",
+        f"  Log loss:    {market_ll:.4f}",
+        "",
+        f"{'Model beats market' if model_brier < market_brier else 'Market beats model'} "
+        f"on Brier score ({model_brier:.4f} vs {market_brier:.4f}).",
+        "",
+        "This is what to check periodically, not any single day's diff on the dashboard. "
         "A few days of one side winning proves nothing -- watch this number over WEEKS "
-        "(Sec 5 Step 6's own stated bar) before treating any result here as real edge."
-    )
+        "(Sec 5 Step 6's own stated bar) before treating any result here as real edge.",
+    ]
+    return "\n".join(lines)
+
+
+def main():
+    print(build_report())
     return 0
 
 

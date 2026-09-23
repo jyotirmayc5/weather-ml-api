@@ -15,11 +15,24 @@ tonight) needs the forecast written YESTERDAY for target_date=today, not a
 freshly-written today's row (which is daily_high_forecast_job's forecast FOR
 TOMORROW). This job only reads an existing row, never writes one.
 
-Uses ALL currently available (target_date < today) KNYC-forecast-vs-Kalshi-
-settlement residuals to estimate probabilities -- this is the live-deployment
-analogue of walk_forward_backtest's chronological, no-future-leakage design
-(each day only ever sees strictly earlier days), just applied once per real
-day instead of scored retrospectively across a historical set."""
+Sec 5g update: the point forecast is now a 6-model ensemble average (NWS +
+ECMWF/GFS/ICON/GEM/UKMO via src/ingestion/open_meteo_client.py's
+fetch_live_previous_day1_high), not NWS alone -- validated walk-forward
+(scripts/test_multi_model_ensemble_adjustment.py) to narrow the gap with the
+real market by ~64% on 61 real days (Brier gap 0.0330 -> 0.0118) versus
+NWS-only. Each of today's 5 independent-model forecasts is also persisted to
+multi_model_forecasts so future days' residual history stays complete without
+a separate backfill step. If a model's fetch fails, it's skipped for today
+(degrades toward fewer models, never crashes the whole run) -- and if ALL 5
+fail, the ensemble naturally degrades to NWS-only rather than blocking
+predictions entirely.
+
+Uses ALL currently available (target_date < today) ensemble-forecast-vs-
+Kalshi-settlement residuals to estimate probabilities -- this is the
+live-deployment analogue of walk_forward_backtest's chronological,
+no-future-leakage design (each day only ever sees strictly earlier days),
+just applied once per real day instead of scored retrospectively across a
+historical set."""
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -28,12 +41,14 @@ from sqlalchemy import text
 from src.backtest.daily_high_backtest import predicted_prob_bucket
 from src.db.job_runs import track_job_run
 from src.db.session import get_session
-from src.db.upsert import upsert_kalshi_prediction
+from src.db.upsert import upsert_kalshi_prediction, upsert_multi_model_forecast
+from src.ingestion.open_meteo_client import fetch_live_previous_day1_high
 from src.kalshi.client import fetch_open_event
 from src.scheduling import in_ny_time_window
 
 NY = ZoneInfo("America/New_York")
 SERIES_TICKER = "KXHIGHNY"
+INDEPENDENT_MODELS = ["ecmwf_ifs025", "gfs_seamless", "icon_seamless", "gem_seamless", "ukmo_seamless"]
 
 FORECAST_SQL = text(
     """
@@ -42,15 +57,29 @@ FORECAST_SQL = text(
     """
 )
 
-RESIDUALS_SQL = text(
+HISTORY_SQL = text(
     """
-    SELECT k.settled_value_f - d.forecast_high_f
+    SELECT d.target_date, d.forecast_high_f, k.settled_value_f
     FROM weather_daily_high_predictions d
     JOIN kalshi_settlements k ON k.target_date = d.target_date
     WHERE d.station = 'KNYC' AND d.forecast_high_f IS NOT NULL AND d.target_date < :today
     ORDER BY d.target_date;
     """
 )
+
+MODEL_HISTORY_SQL = text(
+    """
+    SELECT target_date, model, forecast_high_f FROM multi_model_forecasts
+    WHERE target_date < :today AND forecast_high_f IS NOT NULL;
+    """
+)
+
+
+def _ensemble_forecast(nws_forecast_high_f: float, model_values: dict) -> float:
+    """NWS + whichever independent models actually returned data. Degrades
+    gracefully to NWS alone if all 5 fail, rather than blocking anything."""
+    values = [nws_forecast_high_f] + list(model_values.values())
+    return sum(values) / len(values)
 
 
 def run():
@@ -67,11 +96,42 @@ def run():
         if forecast_row is None:
             print(f"No KNYC forecast_high_f for target_date={today} yet -- skipping today's predictions.")
             return
-        forecast_high_f = float(forecast_row[0])
+        nws_forecast_high_f = float(forecast_row[0])
 
-        residuals = [float(r[0]) for r in session.execute(RESIDUALS_SQL, {"today": today}).all()]
+        today_model_values = {}
+        for model in INDEPENDENT_MODELS:
+            try:
+                value = fetch_live_previous_day1_high(model, today)
+            except Exception as exc:  # noqa: BLE001 -- one model failing shouldn't block the others
+                print(f"  {model} fetch failed, skipping: {exc}")
+                continue
+            if value is None:
+                print(f"  {model} returned no data for {today}, skipping.")
+                continue
+            today_model_values[model] = value
+            session.execute(
+                upsert_multi_model_forecast(
+                    {"target_date": today, "model": model, "forecast_high_f": value, "pulled_at": now}
+                )
+            )
+        session.commit()
+
+        ensemble_forecast_high_f = _ensemble_forecast(nws_forecast_high_f, today_model_values)
+        print(f"  Ensemble forecast: {ensemble_forecast_high_f:.1f}F "
+              f"(NWS {nws_forecast_high_f:.1f}F + {len(today_model_values)}/5 independent models)")
+
+        history_rows = session.execute(HISTORY_SQL, {"today": today}).all()
+        model_by_date: dict = {}
+        for target_date, model, value in session.execute(MODEL_HISTORY_SQL, {"today": today}).all():
+            model_by_date.setdefault(target_date, {})[model] = float(value)
+
+        residuals = []
+        for target_date, nws_forecast, settled in history_rows:
+            ensemble = _ensemble_forecast(float(nws_forecast), model_by_date.get(target_date, {}))
+            residuals.append(float(settled) - ensemble)
+
         if not residuals:
-            print("No historical KNYC/Kalshi residual history yet -- skipping today's predictions.")
+            print("No historical residual history yet -- skipping today's predictions.")
             return
 
         event = fetch_open_event(SERIES_TICKER, today)
@@ -85,7 +145,7 @@ def run():
             floor_strike = market.get("floor_strike")
             cap_strike = market.get("cap_strike")
             model_probability = predicted_prob_bucket(
-                forecast_high_f, residuals, strike_type, floor_strike, cap_strike
+                ensemble_forecast_high_f, residuals, strike_type, floor_strike, cap_strike
             )
             session.execute(
                 upsert_kalshi_prediction(
@@ -95,7 +155,7 @@ def run():
                         "strike_type": strike_type,
                         "floor_strike": floor_strike,
                         "cap_strike": cap_strike,
-                        "forecast_high_f": forecast_high_f,
+                        "forecast_high_f": ensemble_forecast_high_f,
                         "residual_sample_size": len(residuals),
                         "model_probability": model_probability,
                         "market_yes_bid": float(market["yes_bid_dollars"]),

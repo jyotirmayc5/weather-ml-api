@@ -201,6 +201,27 @@ class KalshiMarketPrice(Base):
     pulled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class MultiModelForecast(Base):
+    """New table -- WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 5g: genuinely
+    independent global model forecasts (ECMWF, GFS, ICON, GEM, UKMO via
+    Open-Meteo's live/historical model-selection support), distinct from the
+    within-NWS-model ensemble spread already tested weak (r=+0.110). One-time
+    backfill (scripts/backfill_multi_model_forecasts.py) for correlation
+    testing against real forecast error -- not an ongoing job unless the
+    correlation check justifies it."""
+
+    __tablename__ = "multi_model_forecasts"
+    __table_args__ = (
+        UniqueConstraint("target_date", "model", name="multi_model_forecasts_target_date_model_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    target_date: Mapped[date] = mapped_column(Date)
+    model: Mapped[str] = mapped_column(String)
+    forecast_high_f: Mapped[Optional[float]] = mapped_column(Numeric)
+    pulled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class JobRun(Base):
     """New table, doesn't exist in the real Supabase project yet -- see
     WEATHER_KALSHI_TECHNICAL_PLAN.md checklist for the CREATE TABLE to run

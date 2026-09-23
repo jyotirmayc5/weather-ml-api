@@ -76,6 +76,48 @@ def fetch_historical_hourly(
         return resp.json()
 
 
+@_retry
+def fetch_live_previous_day1_high(model: str, target_date: date, client: httpx.Client | None = None) -> float | None:
+    """The model's ~24h-ahead forecast high for target_date -- what
+    jobs/daily_prediction_job.py uses each morning to match the exact
+    methodology validated in scripts/test_multi_model_ensemble_adjustment.py
+    (yesterday's forecast for today), rather than today's freshest/current
+    forecast.
+
+    Deliberately queries the HISTORICAL endpoint (BASE_URL), not the live one
+    (LIVE_BASE_URL) -- confirmed live, not assumed (WEATHER_KALSHI_TECHNICAL_PLAN.md
+    Sec 5g): the live endpoint's temperature_2m_previous_day1 returned all
+    None for both today and tomorrow when actually queried, while the
+    historical endpoint had complete, real data for the SAME current day
+    when queried with start_date=end_date=today. The "historical" endpoint
+    is, in practice, the reliable way to get this feature even for today's
+    date -- not just genuinely old dates."""
+    params = {
+        "latitude": NYC_LATITUDE,
+        "longitude": NYC_LONGITUDE,
+        "start_date": target_date.isoformat(),
+        "end_date": target_date.isoformat(),
+        "hourly": "temperature_2m_previous_day1",
+        "models": model,
+        "temperature_unit": "fahrenheit",
+        "timezone": "America/New_York",
+    }
+    if client is not None:
+        resp = client.get(BASE_URL, params=params)
+        resp.raise_for_status()
+        payload = resp.json()
+    else:
+        with httpx.Client(timeout=60) as owned_client:
+            resp = owned_client.get(BASE_URL, params=params)
+            resp.raise_for_status()
+            payload = resp.json()
+
+    hourly = payload.get("hourly", {})
+    forecasts = hourly.get("temperature_2m_previous_day1", [])
+    day_values = [f for f in forecasts if f is not None]
+    return max(day_values) if day_values else None
+
+
 def daily_highs_from_hourly(payload: dict) -> dict[date, dict]:
     """Groups the hourly response into per-NY-calendar-day max of both the
     actual and the ~24h-ahead-forecast series. The API's `time` values are

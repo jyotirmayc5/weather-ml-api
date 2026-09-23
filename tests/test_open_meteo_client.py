@@ -1,4 +1,9 @@
-from src.ingestion.open_meteo_client import daily_highs_from_hourly
+from datetime import date
+from unittest.mock import patch
+
+import httpx
+
+from src.ingestion.open_meteo_client import BASE_URL, daily_highs_from_hourly, fetch_live_previous_day1_high
 
 
 def test_groups_by_ny_local_date_and_takes_max():
@@ -58,3 +63,42 @@ def test_handles_none_values_within_an_otherwise_valid_day():
 
 def test_empty_payload_returns_empty_dict():
     assert daily_highs_from_hourly({"hourly": {"time": [], "temperature_2m": [], "temperature_2m_previous_day1": []}}) == {}
+
+
+def _fake_client(payload):
+    fake = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json=payload)))
+    return fake
+
+
+def test_fetch_live_previous_day1_high_queries_historical_endpoint_with_tight_range():
+    # Deliberately the historical endpoint, not a "live" one -- confirmed
+    # live that the live endpoint's previous_day1 support returns all None
+    # even for today's date, while the historical endpoint works correctly
+    # when queried with start_date=end_date=target_date.
+    payload = {"hourly": {"temperature_2m_previous_day1": [60.0, 65.0, 62.0]}}
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json=payload)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = fetch_live_previous_day1_high("ecmwf_ifs025", date(2026, 9, 23), client=client)
+
+    assert result == 65.0
+    assert captured["url"].startswith(BASE_URL)
+    assert "start_date=2026-09-23" in captured["url"]
+    assert "end_date=2026-09-23" in captured["url"]
+    assert "models=ecmwf_ifs025" in captured["url"]
+
+
+def test_fetch_live_previous_day1_high_returns_none_when_all_null():
+    payload = {"hourly": {"temperature_2m_previous_day1": [None, None, None]}}
+    client = _fake_client(payload)
+    assert fetch_live_previous_day1_high("gfs_seamless", date(2026, 9, 23), client=client) is None
+
+
+def test_fetch_live_previous_day1_high_skips_none_values():
+    payload = {"hourly": {"temperature_2m_previous_day1": [None, 70.0, None, 68.0]}}
+    client = _fake_client(payload)
+    assert fetch_live_previous_day1_high("icon_seamless", date(2026, 9, 23), client=client) == 70.0

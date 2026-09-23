@@ -11,6 +11,7 @@ from src.db.models import (
     KalshiMarketPrice,
     KalshiPrediction,
     KalshiSettlement,
+    MultiModelForecast,
     OpenMeteoHistoricalDaily,
     WeatherDailyHighPrediction,
     WeatherObservation,
@@ -104,6 +105,14 @@ def upsert_open_meteo_historical_daily(values: dict):
     """Insert-or-ignore on (target_date, model) -- historical backfill data
     doesn't change once pulled."""
     stmt = insert(OpenMeteoHistoricalDaily).values(**values)
+    return stmt.on_conflict_do_nothing(index_elements=["target_date", "model"])
+
+
+def upsert_multi_model_forecast(values: dict):
+    """Insert-or-ignore on (target_date, model) -- a one-time backfill of
+    historical forecasts that don't change once pulled, same pattern as
+    upsert_open_meteo_historical_daily."""
+    stmt = insert(MultiModelForecast).values(**values)
     return stmt.on_conflict_do_nothing(index_elements=["target_date", "model"])
 
 

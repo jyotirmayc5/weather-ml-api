@@ -391,6 +391,18 @@ One idea from it stood out as genuinely different: since it uses **today's own r
 
 ---
 
+### 5j. Real production incident (2026-09-25): unpinned SQLAlchemy silently broke every job, no code change on our end
+
+`check_job_health.py`'s staleness alert (built specifically for this failure class) caught `latest_observations_job` stale by 31 minutes. Render's real logs (checked directly) showed `ModuleNotFoundError: No module named 'psycopg'` — a fresh Render build's unpinned `pip install -r requirements.txt` picked up a newer SQLAlchemy release that resolved the bare `postgresql://` scheme to the psycopg (v3) driver instead of psycopg2 (the only one actually installed, via `psycopg2-binary`). Confirmed via `job_runs`: zero failed rows existed for this, even though real failures were happening — this crashes inside `get_session()` before `track_job_run()` is ever reached, the exact same blind spot documented multiple times earlier in this project for missing-`DATABASE_URL` incidents.
+
+**Fixed at the source**: `src/db/session.py`'s `get_engine()` now rewrites the DSN to `postgresql+psycopg2://` explicitly before `create_engine()`, so driver resolution can't silently change again regardless of what SQLAlchemy defaults to in a future release. Also pinned `sqlalchemy==2.0.52` (the known-working local version) in `requirements.txt` to reduce the chance of similar drift. Confirmed fixed: `latest_observations_job` logged a new successful run after the push, with no manual redeploy needed (unlike the missing-`DATABASE_URL` incidents, this was a real code fix picked up by Render's normal Auto Sync rebuild on the next scheduled tick).
+
+**Real scope, checked rather than assumed**: since every job shares this same `get_session()` code path, the incident likely affected all of them during its ~1-hour window (roughly 03:30-04:30 UTC), not just the one job whose staleness alert happened to catch it first. Checked each: `hourly_forecast_job` lost exactly one tick (04:02 UTC, confirmed via its own run history — no backfill possible, same reason as always, NWS has no historical forecast archive, a single missing hour of supplementary data, not critical). `actual_high_update_job` missed its entire overnight run, leaving `2026-09-24`'s `actual_high_f` NULL — a real, consequential gap since this feeds the backtest/scorecard data directly. Backfilled via the existing `scripts/backfill_missed_actual_high.py` (built for exactly this scenario earlier in the project): `actual_high_f=66.0`, `raw_error_f=0.0`, `corrected_error_f=-3.8`, confirmed landed correctly. The once-daily jobs whose only tick for the day was already before the incident window (`daily_high_forecast_job`, `corrected_high_update_job`, `kalshi_settlement_job`, `daily_prediction_job`) weren't due to run again until after the fix was already live, so nothing to check or backfill for those.
+
+**Standing lesson worth remembering going forward**: an unpinned dependency silently upgrading on a routine rebuild is a real, demonstrated failure mode for this project now, not just a theoretical risk — worth periodically checking whether other unpinned packages in `requirements.txt` (`fastapi`, `uvicorn`, `pydantic`, `pytest`, `httpx`, `tenacity`, `python-dotenv`) deserve the same pinning treatment, though not urgent enough to do all at once outside of an active incident.
+
+---
+
 ## 6. Risk notes
 
 - Not financial advice — the backtesting and calibration steps exist so you're trading on validated edge rather than backtest overfitting, the single most common way projects like this lose money.

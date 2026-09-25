@@ -17,15 +17,15 @@ TOMORROW). This job only reads an existing row, never writes one.
 
 Sec 5g update: the point forecast is now a 6-model ensemble average (NWS +
 ECMWF/GFS/ICON/GEM/UKMO via src/ingestion/open_meteo_client.py's
-fetch_live_previous_day1_high), not NWS alone -- validated walk-forward
+fetch_live_previous_day1_high_multi), not NWS alone -- validated walk-forward
 (scripts/test_multi_model_ensemble_adjustment.py) to narrow the gap with the
 real market by ~64% on 61 real days (Brier gap 0.0330 -> 0.0118) versus
-NWS-only. Each of today's 5 independent-model forecasts is also persisted to
+NWS-only. Today's independent-model forecasts (whichever the single combined
+request actually returns -- individual models can be missing from the result
+without the whole request failing) are also persisted to
 multi_model_forecasts so future days' residual history stays complete without
-a separate backfill step. If a model's fetch fails, it's skipped for today
-(degrades toward fewer models, never crashes the whole run) -- and if ALL 5
-fail, the ensemble naturally degrades to NWS-only rather than blocking
-predictions entirely.
+a separate backfill step. If the combined fetch fails entirely, the ensemble
+degrades to NWS-only rather than blocking predictions.
 
 Uses ALL currently available (target_date < today) ensemble-forecast-vs-
 Kalshi-settlement residuals to estimate probabilities -- this is the
@@ -34,16 +34,19 @@ no-future-leakage design (each day only ever sees strictly earlier days),
 just applied once per real day instead of scored retrospectively across a
 historical set.
 
-Real bug hit on the very first production run, not hypothetical: calling
-Open-Meteo 5 times in under a second (one per model, no spacing) hit its rate
-limit every single time -- all 5 fetches failed with 429, silently degrading
-to NWS-only with no error raised (the job "succeeded", just did less than
-intended). Fixed at the client layer (429 now retryable, same fix already
-applied to src/kalshi/client.py) plus MODEL_FETCH_DELAY_SECONDS here as
-defense in depth, so hitting the limit at all is less likely in the first
-place."""
+Real bug hit twice in production, not hypothetical. First: calling Open-Meteo
+5 times in under a second (one per model, no spacing) hit its rate limit
+every single time -- fixed by making 429 retryable at the client layer plus a
+1-second delay between calls. Second, the SAME DAY that fix was validated: on
+the very next real tick, all 5 calls STILL hit 429 on every attempt despite
+retries and spacing -- Open-Meteo's own documented limit (600 req/min) is
+nowhere near 5 sequential calls, so the real cause is something else (likely
+a Render-IP-specific or shared free-tier throttle, not fully diagnosable from
+here). The actual fix: fetch_live_previous_day1_high_multi() requests all 5
+models in ONE combined API call (confirmed live that Open-Meteo supports a
+comma-separated models= list) instead of 5 separate ones -- fewer requests,
+not smarter retries around a limit whose real trigger isn't fully understood."""
 from datetime import datetime, timezone
-from time import sleep
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
@@ -52,14 +55,13 @@ from src.backtest.daily_high_backtest import predicted_prob_bucket
 from src.db.job_runs import track_job_run
 from src.db.session import get_session
 from src.db.upsert import upsert_kalshi_prediction, upsert_multi_model_forecast
-from src.ingestion.open_meteo_client import fetch_live_previous_day1_high
+from src.ingestion.open_meteo_client import fetch_live_previous_day1_high_multi
 from src.kalshi.client import fetch_open_event
 from src.scheduling import in_ny_time_window
 
 NY = ZoneInfo("America/New_York")
 SERIES_TICKER = "KXHIGHNY"
 INDEPENDENT_MODELS = ["ecmwf_ifs025", "gfs_seamless", "icon_seamless", "gem_seamless", "ukmo_seamless"]
-MODEL_FETCH_DELAY_SECONDS = 1.0
 
 FORECAST_SQL = text(
     """
@@ -109,18 +111,13 @@ def run():
             return
         nws_forecast_high_f = float(forecast_row[0])
 
-        today_model_values = {}
-        for model in INDEPENDENT_MODELS:
-            sleep(MODEL_FETCH_DELAY_SECONDS)
-            try:
-                value = fetch_live_previous_day1_high(model, today)
-            except Exception as exc:  # noqa: BLE001 -- one model failing shouldn't block the others
-                print(f"  {model} fetch failed, skipping: {exc}")
-                continue
-            if value is None:
-                print(f"  {model} returned no data for {today}, skipping.")
-                continue
-            today_model_values[model] = value
+        try:
+            today_model_values = fetch_live_previous_day1_high_multi(INDEPENDENT_MODELS, today)
+        except Exception as exc:  # noqa: BLE001 -- a failed fetch shouldn't block NWS-only fallback
+            print(f"  Independent-model fetch failed entirely, degrading to NWS-only: {exc}")
+            today_model_values = {}
+
+        for model, value in today_model_values.items():
             session.execute(
                 upsert_multi_model_forecast(
                     {"target_date": today, "model": model, "forecast_high_f": value, "pulled_at": now}

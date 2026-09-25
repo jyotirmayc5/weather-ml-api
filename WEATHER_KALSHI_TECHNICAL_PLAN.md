@@ -401,6 +401,14 @@ One idea from it stood out as genuinely different: since it uses **today's own r
 
 **Standing lesson worth remembering going forward**: an unpinned dependency silently upgrading on a routine rebuild is a real, demonstrated failure mode for this project now, not just a theoretical risk — worth periodically checking whether other unpinned packages in `requirements.txt` (`fastapi`, `uvicorn`, `pydantic`, `pytest`, `httpx`, `tenacity`, `python-dotenv`) deserve the same pinning treatment, though not urgent enough to do all at once outside of an active incident.
 
+### 5k. Same day, second real incident: the 429 fix from Sec 5g wasn't actually sufficient
+
+Checked today's real ensemble tick (13:48 UTC) as a routine confirmation and found it had silently degraded to NWS-only again — `kalshi_predictions.forecast_high_f` exactly matched NWS alone (68.0°F), despite both the 429 fix and the psycopg2 fix already being live. Render's real logs (checked directly) showed all 5 independent-model requests hit `429 Too Many Requests` again, on every single attempt, despite 429 being retryable and a 1-second delay already in place. Checked yesterday's tick first to confirm this was a new, separate problem, not a regression: `2026-09-24`'s prediction genuinely used the full ensemble (66.4°F ≠ NWS's 66.0°F, all 5 models present) — the original fix did work once, then broke again.
+
+**Checked Open-Meteo's actual documented rate limit rather than guessing at better backoff**: 600 requests/minute on the free tier — nowhere near what 5 sequential calls would trigger, even with zero spacing. This means the earlier fix's premise (retry harder / space out more) was solving the wrong problem — something else is throttling these specific requests (most plausibly Render's IP range getting treated differently than a residential one, or a shared/global free-tier throttle unrelated to per-client request counts; not fully diagnosable from here).
+
+**The actual fix**: confirmed live that Open-Meteo accepts a comma-separated `models=` list and returns per-model fields in one response — `fetch_live_previous_day1_high_multi()` requests all 5 independent models in a **single** API call instead of 5 separate ones. Tested live before deploying: 5/5 models returned in one request. `jobs/daily_prediction_job.py` updated to use it (2 new tests in `tests/test_open_meteo_client.py`). The real lesson: when retrying-around-a-limit doesn't work, check whether the request *count* itself is the fixable problem, rather than assuming more patience will eventually succeed.
+
 ---
 
 ## 6. Risk notes

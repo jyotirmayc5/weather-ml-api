@@ -124,6 +124,57 @@ def fetch_live_previous_day1_high(model: str, target_date: date, client: httpx.C
     return max(day_values) if day_values else None
 
 
+@_retry
+def fetch_live_previous_day1_high_multi(
+    models: list[str], target_date: date, client: httpx.Client | None = None
+) -> dict[str, float]:
+    """Same as fetch_live_previous_day1_high, for several models in ONE
+    request instead of one request per model -- confirmed live that
+    Open-Meteo accepts a comma-separated `models=` list and returns
+    per-model fields (temperature_2m_previous_day1_<model>).
+
+    Built after a real production incident (WEATHER_KALSHI_TECHNICAL_PLAN.md
+    Sec 5g/5k): even with 429 marked retryable and a 1-second delay between
+    calls, jobs/daily_prediction_job.py's original one-request-per-model
+    approach still hit 429 on every single request on a live run, degrading
+    the whole ensemble to NWS-only. Open-Meteo's own documented limit
+    (600 req/min) is nowhere near what 5 sequential calls would trigger --
+    the real fix is sending fewer requests in the first place, not retrying
+    harder around a limit that isn't actually the documented one (likely a
+    Render-IP-specific or shared free-tier throttle, not fully diagnosable
+    from here). Returns only the models that had real (non-null) data --
+    a model missing from the result dict means no data was available for
+    it, not that the whole request failed."""
+    params = {
+        "latitude": NYC_LATITUDE,
+        "longitude": NYC_LONGITUDE,
+        "start_date": target_date.isoformat(),
+        "end_date": target_date.isoformat(),
+        "hourly": "temperature_2m_previous_day1",
+        "models": ",".join(models),
+        "temperature_unit": "fahrenheit",
+        "timezone": "America/New_York",
+    }
+    if client is not None:
+        resp = client.get(BASE_URL, params=params)
+        resp.raise_for_status()
+        payload = resp.json()
+    else:
+        with httpx.Client(timeout=60) as owned_client:
+            resp = owned_client.get(BASE_URL, params=params)
+            resp.raise_for_status()
+            payload = resp.json()
+
+    hourly = payload.get("hourly", {})
+    results: dict[str, float] = {}
+    for model in models:
+        forecasts = hourly.get(f"temperature_2m_previous_day1_{model}", [])
+        day_values = [f for f in forecasts if f is not None]
+        if day_values:
+            results[model] = max(day_values)
+    return results
+
+
 def daily_highs_from_hourly(payload: dict) -> dict[date, dict]:
     """Groups the hourly response into per-NY-calendar-day max of both the
     actual and the ~24h-ahead-forecast series. The API's `time` values are

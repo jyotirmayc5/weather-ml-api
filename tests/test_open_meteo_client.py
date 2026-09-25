@@ -3,7 +3,12 @@ from unittest.mock import patch
 
 import httpx
 
-from src.ingestion.open_meteo_client import BASE_URL, daily_highs_from_hourly, fetch_live_previous_day1_high
+from src.ingestion.open_meteo_client import (
+    BASE_URL,
+    daily_highs_from_hourly,
+    fetch_live_previous_day1_high,
+    fetch_live_previous_day1_high_multi,
+)
 
 
 def test_groups_by_ny_local_date_and_takes_max():
@@ -102,3 +107,38 @@ def test_fetch_live_previous_day1_high_skips_none_values():
     payload = {"hourly": {"temperature_2m_previous_day1": [None, 70.0, None, 68.0]}}
     client = _fake_client(payload)
     assert fetch_live_previous_day1_high("icon_seamless", date(2026, 9, 23), client=client) == 70.0
+
+
+def test_fetch_live_previous_day1_high_multi_sends_one_comma_separated_request():
+    # Real production fix (WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 5k): 5
+    # separate requests hit 429 on every single one live, even with retries
+    # and spacing -- one combined request is the actual fix.
+    payload = {
+        "hourly": {
+            "temperature_2m_previous_day1_ecmwf_ifs025": [70.0, 72.0],
+            "temperature_2m_previous_day1_gfs_seamless": [68.0, 69.0],
+        }
+    }
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json=payload)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = fetch_live_previous_day1_high_multi(["ecmwf_ifs025", "gfs_seamless"], date(2026, 9, 25), client=client)
+
+    assert result == {"ecmwf_ifs025": 72.0, "gfs_seamless": 69.0}
+    assert "models=ecmwf_ifs025%2Cgfs_seamless" in captured["url"]
+
+
+def test_fetch_live_previous_day1_high_multi_omits_models_with_no_data():
+    payload = {
+        "hourly": {
+            "temperature_2m_previous_day1_ecmwf_ifs025": [70.0],
+            "temperature_2m_previous_day1_gfs_seamless": [None, None],
+        }
+    }
+    client = _fake_client(payload)
+    result = fetch_live_previous_day1_high_multi(["ecmwf_ifs025", "gfs_seamless"], date(2026, 9, 25), client=client)
+    assert result == {"ecmwf_ifs025": 70.0}

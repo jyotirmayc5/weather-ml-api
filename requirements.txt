@@ -3,7 +3,7 @@ uvicorn
 pydantic
 pytest
 httpx
-sqlalchemy
+sqlalchemy==2.0.52
 psycopg2-binary
 tenacity
 python-dotenv

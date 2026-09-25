@@ -191,6 +191,73 @@ def walk_forward_backtest(days: list[tuple], strike_offsets: list[float], min_hi
     return model_pairs, naive_pairs
 
 
+def isotonic_regression(xs: list[float], ys: list[float]) -> tuple[list[float], list[float]]:
+    """Pool Adjacent Violators Algorithm -- fits a monotonically non-decreasing
+    step function to (x, y) pairs. Sorts by x internally; returns
+    (sorted_xs, fitted_ys), both the same length as the input, with fitted_ys
+    guaranteed non-decreasing. Pure-Python, no scikit-learn dependency for one
+    function (WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 5h -- researched isotonic/
+    conformal calibration as the one immediately-testable idea from real
+    literature that doesn't need more data first, unlike ML bias-correction
+    techniques which need far more than our ~110 days)."""
+    order = sorted(range(len(xs)), key=lambda i: xs[i])
+    sorted_xs = [xs[i] for i in order]
+    sorted_ys_raw = [ys[i] for i in order]
+
+    level_sum: list[float] = []
+    level_count: list[int] = []
+    level_value: list[float] = []
+    for y in sorted_ys_raw:
+        level_sum.append(y)
+        level_count.append(1)
+        level_value.append(y)
+        while len(level_value) > 1 and level_value[-2] > level_value[-1]:
+            s = level_sum.pop()
+            c = level_count.pop()
+            level_value.pop()
+            level_sum[-1] += s
+            level_count[-1] += c
+            level_value[-1] = level_sum[-1] / level_count[-1]
+
+    fitted_ys: list[float] = []
+    for value, count in zip(level_value, level_count):
+        fitted_ys.extend([value] * count)
+    return sorted_xs, fitted_ys
+
+
+def apply_isotonic(sorted_xs: list[float], fitted_ys: list[float], query_x: float) -> float:
+    """Linear interpolation lookup on a fitted isotonic step function
+    (isotonic_regression's output) for a new query_x. Clamps to the boundary
+    fitted value outside the range the calibrator was fit on, rather than
+    extrapolating."""
+    if query_x <= sorted_xs[0]:
+        return fitted_ys[0]
+    if query_x >= sorted_xs[-1]:
+        return fitted_ys[-1]
+    for i in range(len(sorted_xs) - 1):
+        if sorted_xs[i] <= query_x <= sorted_xs[i + 1]:
+            if sorted_xs[i + 1] == sorted_xs[i]:
+                return fitted_ys[i]
+            t = (query_x - sorted_xs[i]) / (sorted_xs[i + 1] - sorted_xs[i])
+            return fitted_ys[i] + t * (fitted_ys[i + 1] - fitted_ys[i])
+    return fitted_ys[-1]
+
+
+def isotonic_calibrate(prior_pairs: list[tuple[float, int]], query_prob: float, min_history: int = 30) -> float:
+    """The actual calibration step: fits isotonic_regression on prior
+    (raw_predicted_prob, outcome) pairs -- a day's own pairs must never be in
+    here, same no-future-leakage discipline as walk_forward_backtest -- and
+    returns the calibrated probability for query_prob. Returns query_prob
+    unchanged (no calibration applied) if there isn't enough prior history to
+    fit safely yet."""
+    if len(prior_pairs) < min_history:
+        return query_prob
+    xs = [p for p, _ in prior_pairs]
+    ys = [float(o) for _, o in prior_pairs]
+    sorted_xs, fitted_ys = isotonic_regression(xs, ys)
+    return apply_isotonic(sorted_xs, fitted_ys, query_prob)
+
+
 def reliability_table(pairs: list[tuple[float, int]], n_bins: int = 5):
     """Buckets predictions into n_bins equal-width probability ranges and
     reports predicted-average vs realized-frequency per bucket -- the

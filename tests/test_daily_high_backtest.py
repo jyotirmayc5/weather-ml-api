@@ -3,7 +3,10 @@ import math
 import pytest
 
 from src.backtest.daily_high_backtest import (
+    apply_isotonic,
     brier_score,
+    isotonic_calibrate,
+    isotonic_regression,
     leave_one_out_backtest,
     log_loss,
     predicted_prob_bucket,
@@ -124,6 +127,49 @@ def test_predicted_prob_bucket_greater_than():
 def test_predicted_prob_bucket_rejects_unknown_strike_type():
     with pytest.raises(ValueError):
         predicted_prob_bucket(70, [1.0], "unknown", 70, 71)
+
+
+def test_isotonic_regression_pools_a_single_violation():
+    # 1, 3, 2 -> the 3,2 violates monotonicity, pooled to their average 2.5
+    sorted_xs, fitted_ys = isotonic_regression([1, 2, 3], [1, 3, 2])
+    assert sorted_xs == [1, 2, 3]
+    assert fitted_ys == pytest.approx([1.0, 2.5, 2.5])
+
+
+def test_isotonic_regression_already_monotonic_is_unchanged():
+    sorted_xs, fitted_ys = isotonic_regression([1, 2, 3], [0.1, 0.5, 0.9])
+    assert fitted_ys == pytest.approx([0.1, 0.5, 0.9])
+
+
+def test_isotonic_regression_sorts_unsorted_input():
+    sorted_xs, fitted_ys = isotonic_regression([3, 1, 2], [0.9, 0.1, 0.5])
+    assert sorted_xs == [1, 2, 3]
+    assert fitted_ys == pytest.approx([0.1, 0.5, 0.9])
+
+
+def test_apply_isotonic_interpolates_between_points():
+    sorted_xs, fitted_ys = [0.0, 1.0], [0.2, 0.8]
+    assert apply_isotonic(sorted_xs, fitted_ys, 0.5) == pytest.approx(0.5)
+
+
+def test_apply_isotonic_clamps_outside_the_fitted_range():
+    sorted_xs, fitted_ys = [0.2, 0.8], [0.3, 0.7]
+    assert apply_isotonic(sorted_xs, fitted_ys, -1.0) == pytest.approx(0.3)
+    assert apply_isotonic(sorted_xs, fitted_ys, 2.0) == pytest.approx(0.7)
+
+
+def test_isotonic_calibrate_returns_uncalibrated_when_too_little_history():
+    prior_pairs = [(0.5, 1)] * 5  # well under the default min_history=30
+    assert isotonic_calibrate(prior_pairs, 0.7) == 0.7
+
+
+def test_isotonic_calibrate_never_uses_the_query_days_own_outcome():
+    # All prior pairs say "predicted 0.9 -> always happens" (outcome=1) --
+    # calibration should push a query near that region toward 1.0, using only
+    # the prior pairs, never anything about the day being queried right now.
+    prior_pairs = [(0.9, 1)] * 40
+    calibrated = isotonic_calibrate(prior_pairs, 0.9)
+    assert calibrated == pytest.approx(1.0)
 
 
 def test_reliability_table_buckets_and_averages_correctly():

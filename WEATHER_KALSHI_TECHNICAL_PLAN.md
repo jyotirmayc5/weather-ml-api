@@ -364,6 +364,16 @@ Prompted by "what other data can we get" after the station-spread adjustment fai
 
 **No deployment change from this round** — the live 6-model ensemble stays as-is; this was worth checking rather than assuming more models automatically help, and it did rule out two plausible-sounding improvements cleanly.
 
+### 5h. A literature check, and one more honest negative result — isotonic calibration doesn't help either
+
+Asked directly: is there real research (not remembered/guessed citations — searched live) applicable here? Three findings, in order of usefulness:
+
+1. **A published forecast-combination review (Wang & Hyndman) directly validates §5g's empirical result**: equal-weight averaging is a well-established, hard-to-beat baseline; diversity matters more than picking individually-best members; more models past a point has diminishing or negative returns. Confirms the 6-model ensemble's shape is theoretically sound, not just a lucky configuration.
+2. **ML-based bias correction (BC-Unet, gradient-boosted trees for GFS/short-range temperature post-processing)** — real, current techniques (including a 2025 operational deployment), but trained on far more data than our ~110 days. A concrete target for the ~250-300 day checkpoint already logged in §5 Step 3, not something to attempt now.
+3. **Conformal/isotonic calibration** — the one idea that doesn't need more data first, since it's a distribution-free recalibration of predicted probabilities against realized outcomes rather than a new model. Genuinely current research (a 2026 paper on conformal calibration for probabilistic AI weather forecasts), though the search results themselves note it's seen "little use in meteorology" — research-frontier, not a proven off-the-shelf tool.
+
+**Tested it, same rigor as everything else.** Added `isotonic_regression()`/`apply_isotonic()`/`isotonic_calibrate()` to `src/backtest/daily_high_backtest.py` (pure-Python Pool Adjacent Violators Algorithm, no new dependency — caught and fixed a real bug before trusting it: the pooling step mutated `level_value` in place without popping it in sync with `level_sum`/`level_count`, causing an index-out-of-range on any real violation; fixed and covered by 7 new tests). `scripts/test_isotonic_calibration.py` layers walk-forward calibration on top of the already-deployed 6-model ensemble: **365 pairs across 61 real days, raw ensemble Brier 0.1035 vs. isotonic-calibrated 0.1069 — calibration made it slightly worse, not better.** Honest caveat on the test itself: there aren't enough real Kalshi bucket outcomes yet to build a calibration pool directly, so a synthetic offset-scan was used to generate enough (probability, outcome) pairs — a real compromise in this specific test, not a clean test of the idea in its best form. Doesn't fully rule out calibration helping with a cleaner setup or more data, but this implementation, tested honestly, isn't worth deploying. **No change to the live model.**
+
 **Step 7 — Only if Step 6 shows persistent, real edge: paper trading, then small live positions**
 - Fixed, small position sizing (e.g., capped Kelly fraction), hard daily loss limit, manual approval before any live order, at least initially.
 

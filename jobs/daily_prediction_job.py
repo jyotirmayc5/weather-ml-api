@@ -32,8 +32,18 @@ Kalshi-settlement residuals to estimate probabilities -- this is the
 live-deployment analogue of walk_forward_backtest's chronological,
 no-future-leakage design (each day only ever sees strictly earlier days),
 just applied once per real day instead of scored retrospectively across a
-historical set."""
+historical set.
+
+Real bug hit on the very first production run, not hypothetical: calling
+Open-Meteo 5 times in under a second (one per model, no spacing) hit its rate
+limit every single time -- all 5 fetches failed with 429, silently degrading
+to NWS-only with no error raised (the job "succeeded", just did less than
+intended). Fixed at the client layer (429 now retryable, same fix already
+applied to src/kalshi/client.py) plus MODEL_FETCH_DELAY_SECONDS here as
+defense in depth, so hitting the limit at all is less likely in the first
+place."""
 from datetime import datetime, timezone
+from time import sleep
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
@@ -49,6 +59,7 @@ from src.scheduling import in_ny_time_window
 NY = ZoneInfo("America/New_York")
 SERIES_TICKER = "KXHIGHNY"
 INDEPENDENT_MODELS = ["ecmwf_ifs025", "gfs_seamless", "icon_seamless", "gem_seamless", "ukmo_seamless"]
+MODEL_FETCH_DELAY_SECONDS = 1.0
 
 FORECAST_SQL = text(
     """
@@ -100,6 +111,7 @@ def run():
 
         today_model_values = {}
         for model in INDEPENDENT_MODELS:
+            sleep(MODEL_FETCH_DELAY_SECONDS)
             try:
                 value = fetch_live_previous_day1_high(model, today)
             except Exception as exc:  # noqa: BLE001 -- one model failing shouldn't block the others

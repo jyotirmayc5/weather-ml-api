@@ -33,14 +33,20 @@ def _is_retryable(exc: BaseException) -> bool:
     if isinstance(exc, httpx.TransportError):
         return True
     if isinstance(exc, httpx.HTTPStatusError):
-        return exc.response.status_code >= 500
+        # 429 confirmed real and hit live in production (WEATHER_KALSHI_TECHNICAL_PLAN.md
+        # Sec 5g): jobs/daily_prediction_job.py's first real run called this 5 times in
+        # under a second (one per independent model, no spacing), and every single one
+        # hit Open-Meteo's rate limit -- previously not retried at all since only >=500
+        # counted, silently degrading the live ensemble to NWS-only with no error raised.
+        # Same fix already applied to src/kalshi/client.py for the same failure class.
+        return exc.response.status_code >= 500 or exc.response.status_code == 429
     return False
 
 
 _retry = retry(
     retry=retry_if_exception(_is_retryable),
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=10),
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
     reraise=True,
 )
 

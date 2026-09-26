@@ -1,9 +1,7 @@
-"""Open-Meteo Historical Forecast API client -- used only for backfilling
-past seasons we have no NWS-based data for (WEATHER_KALSHI_TECHNICAL_PLAN.md).
-Deliberately NOT used for live/ongoing collection -- that stays on the real
-NWS gridpoint data this whole pipeline is built around; this is a
-methodologically distinct, clearly-separated supplementary source for
-history that predates our own collection (which started 2026-05-25).
+"""Open-Meteo Historical Forecast API client -- originally used only for
+backfilling past seasons we have no NWS-based data for
+(WEATHER_KALSHI_TECHNICAL_PLAN.md), now also used live daily by
+jobs/daily_prediction_job.py for the multi-model ensemble (Sec 5g).
 
 Uses the Previous Runs feature (the `_previous_day1` variable suffix), not
 the plain historical-forecast endpoint -- the plain one stitches each run's
@@ -13,20 +11,46 @@ train/backtest a bias-correction model. `_previous_day1` gives the fixed
 ~24h-ahead forecast for each hour instead, which is what actually matches
 this project's real "predict tomorrow's high" pattern.
 
-No API key needed for non-commercial use (verified against the real API, not
-assumed). GFS 2m temperature history goes back to March 2021.
+Paid tier (Sec 5k/5l): the free anonymous tier's documented limit (600
+req/min) was never actually the problem -- real production runs on Render
+hit 429 even on a single combined request, most likely because Open-Meteo
+throttles/flags Render's shared, rotating outbound IP pool rather than our
+own request pattern. Subscribed to Open-Meteo's paid Standard tier ($29/mo,
+1M calls/month, our actual usage is ~30/month) to get off that shared IP
+path entirely. If OPEN_METEO_API_KEY is set, requests go to the
+'customer-' prefixed hostname with an apikey= param (Open-Meteo's
+documented pattern for paid access); otherwise falls back to the free,
+keyless endpoint, so local dev without a key still works exactly as before.
 """
+import os
 from datetime import date
 
 import httpx
+from dotenv import load_dotenv
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
+load_dotenv()
+
 BASE_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
+CUSTOMER_BASE_URL = "https://customer-historical-forecast-api.open-meteo.com/v1/forecast"
 
 # Approximate Central Park / KNYC coordinates -- Open-Meteo snaps to its
 # nearest model grid point regardless (returned ~40.7886, -73.9661 for this).
 NYC_LATITUDE = 40.7812
 NYC_LONGITUDE = -73.9665
+
+
+def _resolve_url_and_params(params: dict) -> tuple[str, dict]:
+    """Routes to the paid customer endpoint with the API key appended if
+    OPEN_METEO_API_KEY is set in the environment, else the free endpoint
+    unchanged -- verified against Open-Meteo's own documented convention
+    (a 'customer-' hostname prefix plus an apikey= query param), not yet
+    cross-checked against a real successful paid response at the time this
+    was written; confirm once the key is live."""
+    api_key = os.environ.get("OPEN_METEO_API_KEY")
+    if api_key:
+        return CUSTOMER_BASE_URL, {**params, "apikey": api_key}
+    return BASE_URL, params
 
 
 def _is_retryable(exc: BaseException) -> bool:
@@ -72,12 +96,13 @@ def fetch_historical_hourly(
         "temperature_unit": "fahrenheit",
         "timezone": "America/New_York",
     }
+    url, params = _resolve_url_and_params(params)
     if client is not None:
-        resp = client.get(BASE_URL, params=params)
+        resp = client.get(url, params=params)
         resp.raise_for_status()
         return resp.json()
     with httpx.Client(timeout=60) as owned_client:
-        resp = owned_client.get(BASE_URL, params=params)
+        resp = owned_client.get(url, params=params)
         resp.raise_for_status()
         return resp.json()
 
@@ -90,8 +115,8 @@ def fetch_live_previous_day1_high(model: str, target_date: date, client: httpx.C
     (yesterday's forecast for today), rather than today's freshest/current
     forecast.
 
-    Deliberately queries the HISTORICAL endpoint (BASE_URL), not the live one
-    (LIVE_BASE_URL) -- confirmed live, not assumed (WEATHER_KALSHI_TECHNICAL_PLAN.md
+    Deliberately queries the HISTORICAL endpoint (BASE_URL / CUSTOMER_BASE_URL),
+    not the live one -- confirmed live, not assumed (WEATHER_KALSHI_TECHNICAL_PLAN.md
     Sec 5g): the live endpoint's temperature_2m_previous_day1 returned all
     None for both today and tomorrow when actually queried, while the
     historical endpoint had complete, real data for the SAME current day
@@ -108,13 +133,14 @@ def fetch_live_previous_day1_high(model: str, target_date: date, client: httpx.C
         "temperature_unit": "fahrenheit",
         "timezone": "America/New_York",
     }
+    url, params = _resolve_url_and_params(params)
     if client is not None:
-        resp = client.get(BASE_URL, params=params)
+        resp = client.get(url, params=params)
         resp.raise_for_status()
         payload = resp.json()
     else:
         with httpx.Client(timeout=60) as owned_client:
-            resp = owned_client.get(BASE_URL, params=params)
+            resp = owned_client.get(url, params=params)
             resp.raise_for_status()
             payload = resp.json()
 
@@ -155,13 +181,14 @@ def fetch_live_previous_day1_high_multi(
         "temperature_unit": "fahrenheit",
         "timezone": "America/New_York",
     }
+    url, params = _resolve_url_and_params(params)
     if client is not None:
-        resp = client.get(BASE_URL, params=params)
+        resp = client.get(url, params=params)
         resp.raise_for_status()
         payload = resp.json()
     else:
         with httpx.Client(timeout=60) as owned_client:
-            resp = owned_client.get(BASE_URL, params=params)
+            resp = owned_client.get(url, params=params)
             resp.raise_for_status()
             payload = resp.json()
 

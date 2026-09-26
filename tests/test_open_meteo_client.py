@@ -5,6 +5,8 @@ import httpx
 
 from src.ingestion.open_meteo_client import (
     BASE_URL,
+    CUSTOMER_BASE_URL,
+    _resolve_url_and_params,
     daily_highs_from_hourly,
     fetch_live_previous_day1_high,
     fetch_live_previous_day1_high_multi,
@@ -75,11 +77,14 @@ def _fake_client(payload):
     return fake
 
 
-def test_fetch_live_previous_day1_high_queries_historical_endpoint_with_tight_range():
+def test_fetch_live_previous_day1_high_queries_historical_endpoint_with_tight_range(monkeypatch):
     # Deliberately the historical endpoint, not a "live" one -- confirmed
     # live that the live endpoint's previous_day1 support returns all None
     # even for today's date, while the historical endpoint works correctly
     # when queried with start_date=end_date=target_date.
+    # No API key here -- forces the free-tier BASE_URL path regardless of
+    # whether a real OPEN_METEO_API_KEY happens to be set in the local .env.
+    monkeypatch.delenv("OPEN_METEO_API_KEY", raising=False)
     payload = {"hourly": {"temperature_2m_previous_day1": [60.0, 65.0, 62.0]}}
     captured = {}
 
@@ -109,10 +114,11 @@ def test_fetch_live_previous_day1_high_skips_none_values():
     assert fetch_live_previous_day1_high("icon_seamless", date(2026, 9, 23), client=client) == 70.0
 
 
-def test_fetch_live_previous_day1_high_multi_sends_one_comma_separated_request():
+def test_fetch_live_previous_day1_high_multi_sends_one_comma_separated_request(monkeypatch):
     # Real production fix (WEATHER_KALSHI_TECHNICAL_PLAN.md Sec 5k): 5
     # separate requests hit 429 on every single one live, even with retries
     # and spacing -- one combined request is the actual fix.
+    monkeypatch.delenv("OPEN_METEO_API_KEY", raising=False)
     payload = {
         "hourly": {
             "temperature_2m_previous_day1_ecmwf_ifs025": [70.0, 72.0],
@@ -142,3 +148,43 @@ def test_fetch_live_previous_day1_high_multi_omits_models_with_no_data():
     client = _fake_client(payload)
     result = fetch_live_previous_day1_high_multi(["ecmwf_ifs025", "gfs_seamless"], date(2026, 9, 25), client=client)
     assert result == {"ecmwf_ifs025": 70.0}
+
+
+def test_resolve_url_and_params_uses_free_endpoint_when_no_key(monkeypatch):
+    monkeypatch.delenv("OPEN_METEO_API_KEY", raising=False)
+    url, params = _resolve_url_and_params({"a": 1})
+    assert url == BASE_URL
+    assert params == {"a": 1}
+    assert "apikey" not in params
+
+
+def test_resolve_url_and_params_uses_customer_endpoint_with_apikey(monkeypatch):
+    # Real production fix (WEATHER_KALSHI_TECHNICAL_PLAN.md paid-tier section):
+    # the free anonymous tier's shared/rotating Render IP was getting 429'd
+    # regardless of request pattern -- a paid Professional-plan key routes to
+    # a dedicated 'customer-' prefixed host instead.
+    monkeypatch.setenv("OPEN_METEO_API_KEY", "fake-test-key")
+    url, params = _resolve_url_and_params({"a": 1})
+    assert url == CUSTOMER_BASE_URL
+    assert params == {"a": 1, "apikey": "fake-test-key"}
+
+
+def test_fetch_live_previous_day1_high_multi_routes_to_customer_endpoint_with_key(monkeypatch):
+    monkeypatch.setenv("OPEN_METEO_API_KEY", "fake-test-key")
+    payload = {
+        "hourly": {
+            "temperature_2m_previous_day1_gfs_seamless": [61.0, 63.0],
+        }
+    }
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json=payload)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = fetch_live_previous_day1_high_multi(["gfs_seamless"], date(2026, 9, 26), client=client)
+
+    assert result == {"gfs_seamless": 63.0}
+    assert captured["url"].startswith(CUSTOMER_BASE_URL)
+    assert "apikey=fake-test-key" in captured["url"]

@@ -86,6 +86,12 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
+      # Paid Open-Meteo Professional plan key (src/ingestion/open_meteo_client.py) --
+      # routes the multi-model ensemble fetch off the free tier's shared/rotating
+      # Render IP, which was getting 429'd regardless of request pattern. Same
+      # manual-add-on-Environment-tab gap as DATABASE_URL above.
+      - key: OPEN_METEO_API_KEY
+        sync: false
 
   # REAL cutover, last job in the primary migration (WEATHER_KALSHI_TECHNICAL_PLAN.md
   # Sec 4 Step 5): backfills corrected_high_f for all 4 stations from the day's

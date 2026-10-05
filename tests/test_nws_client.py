@@ -121,6 +121,29 @@ def test_retries_on_5xx_then_succeeds():
     assert result == {"properties": {}}
 
 
+def test_retries_on_403_then_succeeds():
+    # Real production incident (WEATHER_KALSHI_TECHNICAL_PLAN.md): NWS's own
+    # API intermittently 403'd on otherwise-healthy requests -- confirmed
+    # transient, not a block, since the same request succeeded moments later
+    # by hand. Only 403 gets this treatment, not 4xx generally.
+    responses = [
+        httpx.Response(403, request=httpx.Request("GET", "http://x")),
+        httpx.Response(200, json={"properties": {}}, request=httpx.Request("GET", "http://x")),
+    ]
+    calls = {"n": 0}
+
+    def fake_get(self, path, params=None):
+        resp = responses[calls["n"]]
+        calls["n"] += 1
+        return resp
+
+    with patch.object(httpx.Client, "get", fake_get), patch("time.sleep", lambda s: None):
+        result = fetch_gridpoint_forecast("OKX", 33, 37)
+
+    assert calls["n"] == 2
+    assert result == {"properties": {}}
+
+
 def test_does_not_retry_on_4xx():
     calls = {"n": 0}
 

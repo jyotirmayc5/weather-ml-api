@@ -423,6 +423,12 @@ Checked for a free path off this before spending anything: Open-Meteo has no fre
 
 **Confirmed fixed on real ticks**: 2026-09-26's scheduled 13:48 UTC tick still degraded to NWS-only (the key hadn't been added to Render's Environment tab yet at that point) — a manual "Trigger Run" done outside the 9:48am ET window doesn't test anything real either, since `daily_prediction_job.run()`'s `in_ny_time_window(9, 48)` guard returns before `track_job_run()` is even entered, leaving zero trace either way (same blind spot as Sec 5j). The next two genuine scheduled ticks, 2026-09-27 and 2026-09-28, both pulled all 5 independent models successfully via the paid endpoint (`multi_model_forecasts` populated, ensemble `forecast_high_f` diverging from NWS-alone on both days) — the paid Professional tier is confirmed holding on real production traffic, not just a one-off local test.
 
+### 5m. Minor, genuinely transient NWS 403s — made retryable, same pattern as the Open-Meteo 429 fix
+
+A routine health check (2026-10-05) found `latest_observations_job` had failed twice in the preceding week — 2026-10-02 and 2026-10-05, both at exactly 12:15 UTC, both isolated single-tick failures (the ticks immediately before and after succeeded normally) — `Client error '403 Forbidden'` from `api.weather.gov/stations/KNYC/observations/latest`. Checked rather than assumed: hand-tested the exact same request (same `User-Agent`, same station) immediately afterward and got a clean `200`, ruling out a real block/auth/config problem. `src/ingestion/nws_client.py`'s retry policy deliberately only covered transport errors and 5xx, not 4xx (403 included) — correct in general, since most 4xx are real client errors that retrying won't fix, but this specific 403 is evidently NWS's own API having a transient blip, the same shape of problem as the Open-Meteo 429 saga (Sec 5g/5k/5l), just far smaller in impact (one lost 15-minute observation per occurrence, not a whole day's ensemble).
+
+**Fix**: added 403 specifically (not 4xx generally — 404 etc. still fail immediately, per `test_does_not_retry_on_4xx`) to `_is_retryable()`'s retryable set, mirroring the exact same reasoning already applied to Open-Meteo's 429. New test `test_retries_on_403_then_succeeds` added alongside the existing 5xx-retry test. 110/110 tests passing (was 109 — the new test).
+
 ---
 
 ## 6. Risk notes

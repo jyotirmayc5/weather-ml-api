@@ -26,7 +26,14 @@ def _is_retryable(exc: BaseException) -> bool:
     if isinstance(exc, httpx.TransportError):
         return True
     if isinstance(exc, httpx.HTTPStatusError):
-        return exc.response.status_code >= 500
+        # 403 confirmed real and transient, not a block: latest_observations_job
+        # hit it twice in one week (2026-10-02, 2026-10-05), both isolated
+        # single-tick failures with the ticks immediately before/after
+        # succeeding normally, and the same request (same User-Agent, same
+        # station) succeeded immediately when retested by hand. Other 4xx
+        # (404, etc.) are left alone -- those mean a real client error, not an
+        # NWS-side blip.
+        return exc.response.status_code >= 500 or exc.response.status_code == 403
     return False
 
 

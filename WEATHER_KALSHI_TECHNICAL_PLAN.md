@@ -429,6 +429,10 @@ A routine health check (2026-10-05) found `latest_observations_job` had failed t
 
 **Fix**: added 403 specifically (not 4xx generally — 404 etc. still fail immediately, per `test_does_not_retry_on_4xx`) to `_is_retryable()`'s retryable set, mirroring the exact same reasoning already applied to Open-Meteo's 429. New test `test_retries_on_403_then_succeeds` added alongside the existing 5xx-retry test. 110/110 tests passing (was 109 — the new test).
 
+**This fix didn't actually work — checked honestly rather than assumed fixed, 3 days later.** 8 more isolated 403s hit in the 2 days right after it shipped (2026-10-06: 6, 2026-10-07: 2, the latter the first time `hourly_forecast_job` was hit too, not just `latest_observations_job`) — a sharp jump from the 2-in-7-days rate that prompted the original fix, not an improvement. Every Render cron tick rebuilds from latest `main`, so this isn't a deploy-timing gap — the fix really was live for all of these. Checked the actual pattern again: still isolated single-tick blips (always healthy immediately before and after), which means the 3-attempt/~10s-total retry window itself was too short to ride out whatever NWS's blip actually lasts — it was retrying into the same still-down window, not past it.
+
+**Widened (2026-10-08)**: `stop_after_attempt(6)` + `wait_exponential(multiplier=2, min=2, max=20)`, roughly 50s of total backoff before giving up — comfortably under the 15-minute cron interval so it can't collide with the next natural tick, but a real step up from ~10s. New test `test_gives_up_after_6_attempts_on_persistent_403` locks in the exact attempt count so this can't silently shrink back. Not yet confirmed to actually fix it — same honesty standard as the first attempt: watch real ticks rather than assume success from the code change alone.
+
 ---
 
 ## 6. Risk notes

@@ -39,8 +39,16 @@ def _is_retryable(exc: BaseException) -> bool:
 
 _retry = retry(
     retry=retry_if_exception(_is_retryable),
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=10),
+    # Widened 2026-10-08: the original 3-attempt/~10s-total window (added for
+    # the 403 fix above) didn't actually stop the failures -- WEATHER_KALSHI_
+    # TECHNICAL_PLAN.md logs 8 more isolated 403s in the 2 days right after
+    # that fix shipped, each one still a single-tick blip surrounded by
+    # successes, meaning NWS's own blip outlasts ~10s of retrying. 6
+    # attempts with a longer backoff (~50s total before giving up) stays
+    # well under the 15-minute cron interval while giving a real blip more
+    # room to clear before this job gives up and waits for its next tick.
+    stop=stop_after_attempt(6),
+    wait=wait_exponential(multiplier=2, min=2, max=20),
     reraise=True,
 )
 

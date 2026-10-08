@@ -144,6 +144,23 @@ def test_retries_on_403_then_succeeds():
     assert result == {"properties": {}}
 
 
+def test_gives_up_after_6_attempts_on_persistent_403():
+    # Widened 2026-10-08: a 3-attempt/~10s window wasn't enough to ride out
+    # a real blip (8 failures in the 2 days right after that fix shipped) --
+    # locks in the wider 6-attempt policy so it can't silently shrink back.
+    calls = {"n": 0}
+
+    def fake_get(self, path, params=None):
+        calls["n"] += 1
+        return httpx.Response(403, request=httpx.Request("GET", "http://x"))
+
+    with patch.object(httpx.Client, "get", fake_get), patch("time.sleep", lambda s: None):
+        with pytest.raises(httpx.HTTPStatusError):
+            fetch_gridpoint_forecast("OKX", 33, 37)
+
+    assert calls["n"] == 6
+
+
 def test_does_not_retry_on_4xx():
     calls = {"n": 0}
 
